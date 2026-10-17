@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from shellshock.creator import generator, drivers
+from shellshock.creator import auth, generator, drivers
 from shellshock.creator.spec import WebShellSpec
 from shellsuite.protocol import contract
 
@@ -29,6 +30,10 @@ class SpecTests(unittest.TestCase):
     def test_encrypted_requires_secret(self):
         with self.assertRaises(ValueError):
             WebShellSpec(vector="cookie", mode="encrypted").validate()
+
+    def test_auth_requires_secret(self):
+        with self.assertRaises(ValueError):
+            WebShellSpec(vector="cookie", mode="auth").validate()
 
     def test_default_driver_is_first(self):
         spec = WebShellSpec(vector="cookie", mode="plain")
@@ -83,9 +88,41 @@ class GeneratorTests(unittest.TestCase):
 
     def test_every_vector_is_php52_compatible(self):
         for vector in contract.VECTORS:
-            php = generator.generate(WebShellSpec(vector=vector, mode="plain"))
-            self.assertNotIn("??", php, vector)  # null-coalescing is PHP 7.0+
-            self.assertIn("isset(", php, vector)
+            for mode in ("plain", "auth"):
+                php = generator.generate(
+                    WebShellSpec(vector=vector, mode=mode, secret="x")
+                )
+                self.assertNotIn("??", php, (vector, mode))  # PHP 7.0+
+                self.assertIn("isset(", php, (vector, mode))
+
+    def test_auth_embeds_hash_and_gate(self):
+        secret = "hunter2"
+        expected = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+        for vector in contract.VECTORS:
+            php = generator.generate(
+                WebShellSpec(vector=vector, mode="auth", secret=secret)
+            )
+            self.assertIn(contract.AUTH_PARAM_NAMES[vector], php, vector)
+            self.assertIn(expected, php, vector)
+            self.assertIn('hash("sha256"', php, vector)
+            self.assertIn("$__ss_ok", php, vector)
+            self.assertNotIn("{{", php, vector)
+
+    def test_plain_has_no_auth_material(self):
+        php = generator.generate(WebShellSpec(vector="cookie", mode="plain"))
+        self.assertIn("$__ss_ok = true;", php)
+        self.assertNotIn("hash(", php)
+        for name in contract.AUTH_PARAM_NAMES.values():
+            self.assertNotIn(name, php)
+
+    def test_guard_supports_every_contract_vector(self):
+        for vector in contract.VECTORS:
+            php = auth.guard(vector, "deadbeef")
+            self.assertIn(contract.AUTH_PARAM_NAMES[vector], php, vector)
+
+    def test_guard_rejects_unknown_vector(self):
+        with self.assertRaises(ValueError):
+            auth.guard("nope", "deadbeef")
 
     def test_write_default_goes_under_shells_dir(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -85,3 +85,42 @@ What was tested:
 Notes:
 - These tests are generation/CLI-level; end-to-end execution on the lab was already done by hand via curl (see previous commit message) and is not part of the automated suite.
 - `cli.py` still hard-codes the vector choices rather than deriving them from `contract.VECTORS`; left as-is for now (candidate cleanup).
+
+
+[2026-10-17 19:05] Task: authenticated webshells (objective 1.2).
+
+What was done:
+- Added `shellshock/creator/auth.py` (Creator-side, per the decision to keep emitted-PHP code out of the shared contract): `ALGORITHM = "sha256"`, `secret_hash(secret)` (hex digest), and `guard(vector, expected_hash)` which returns the PHP that reads the vector's credential and sets `$__ss_ok`. The credential channel per vector comes from `contract.AUTH_PARAM_NAMES` (cookie/post direct; header via the `HTTP_`+uppercase+underscore transform).
+- `shellshock/creator/spec.py`: `validate()` now requires a secret for `auth` too (`mode in ("auth", "encrypted")`).
+- `shellshock/creator/generator.py`: imports `auth`; `_context()` builds `auth_block` = `$__ss_ok = true;` for plain, or `auth.guard(vector, secret_hash(secret))` for auth (and, for the time being, encrypted, which behaves like auth until implemented - accepted as a temporary simplification).
+- Templates (`cookie.php.tmpl`, `header.php.tmpl`, `post.php.tmpl`): added the `{{auth_block}}` placeholder and changed the gate to `if ($__ss_ok && $__ss_cmd !== "")`. The shell stays silent when the credential is missing or wrong (no oracle).
+- `shellshock/cli.py`: `--mode` now accepts `plain` and `auth`; generation is wrapped so a `ValueError` (e.g. auth without `--secret`) prints a clean `error: ...` and exits 2 instead of a traceback. Updated the `--secret` help text.
+- `shellsuite/protocol/contract.py`: refreshed the `AUTH_PARAM_NAMES` comment (no structural change).
+- Tests: `tests/test_creator.py` (`test_auth_requires_secret`, `test_auth_embeds_hash_and_gate`, `test_plain_has_no_auth_material`, and `test_every_vector_is_php52_compatible` now covers plain+auth); `tests/test_shellshock_cli.py` (`test_create_auth_writes_gated_shell`, `test_create_auth_without_secret_fails_cleanly`).
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 27 tests, all OK.
+- Generated cookie/header/post auth shells by hand: each embeds the correct auth parameter, the SHA-256 digest of the password, and the `$__ss_ok` gate; plain shell has no auth material (`$__ss_ok = true;`).
+- Digest checked against `sha256("hunter2")` = f52fbd32b2b3b86ff88ef6c490628285f482af15ddcb29541f94bcf526a3f6c7.
+
+Notes:
+- The password is never stored in plaintext: only its SHA-256 hash is embedded. `hash("sha256", ...)` is PHP 5.1.2+, so the output stays 5.2-compatible.
+- Lab verification (curl with the correct credential executes; wrong/missing credential yields nothing) still to be done by hand after redeploying the regenerated files.
+- Deferred on purpose (user decision): `encrypted` silently behaves like `auth` for now, and `spec.validate()` still accepts any `contract.MODES` value; both to be revisited when encryption (1.3) lands.
+
+
+[2026-10-17 19:35] Task: refactor auth.py credential reading to a data-driven map.
+
+Context:
+- Review of `shellshock/creator/auth.py`: the per-vector read used an `if/elif/else` chain whose `else` assumed "header", so a new vector added to `contract.VECTORS` would silently generate wrong PHP.
+
+What was done:
+- Replaced the chain with a `_READERS` dict keyed by vector (cookie/header/post), each value a PHP statement using a `{name}` placeholder filled from `contract.AUTH_PARAM_NAMES`. `guard()` now looks the vector up and raises `ValueError` for one that has no reader, so a new contract vector fails loudly instead of falling into a wrong branch.
+- `tests/test_creator.py`: added `test_guard_supports_every_contract_vector` (guard works for every contract vector) and `test_guard_rejects_unknown_vector`.
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 29 tests, all OK.
+- Generated PHP is unchanged for cookie/header/post.
+
+Notes:
+- Adding a future vector to the contract now needs one `_READERS` entry; the coverage test will fail until it is added.

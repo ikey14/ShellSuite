@@ -23,7 +23,7 @@ PARAM_NAMES: dict[str, str] = {
     "post": "shellshock",
 }
 
-# Reserved for auth mode (lands Sat 17).
+# Credential channel per vector, for auth (and later encrypted) modes.
 AUTH_PARAM_NAMES: dict[str, str] = {
     "cookie": "shellshock_auth",
     "header": "X-ShellShock-Auth",

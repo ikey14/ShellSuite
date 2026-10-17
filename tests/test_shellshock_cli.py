@@ -57,6 +57,33 @@ class ShellshockCliTests(unittest.TestCase):
     def test_create_post_reads_post_superglobal(self):
         self.assertIn('$_POST["shellshock"]', self._create("post"))
 
+    def test_create_auth_writes_gated_shell(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "shell.php")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cli.main(
+                    ["shock", "create", "--vector", "cookie", "--mode", "auth",
+                     "--secret", "hunter2", "--out", out]
+                )
+            self.assertEqual(rc, 0)
+            with open(out, encoding="utf-8") as fh:
+                content = fh.read()
+            self.assertIn("shellshock_auth", content)
+            self.assertIn('hash("sha256"', content)
+
+    def test_create_auth_without_secret_fails_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "shell.php")
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                rc = cli.main(
+                    ["shock", "create", "--vector", "cookie", "--mode", "auth",
+                     "--out", out]
+                )
+            self.assertNotEqual(rc, 0)
+            self.assertNotIn("Traceback", buf.getvalue())
+
     def test_bad_vector_fails_cleanly(self):
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf), self.assertRaises(SystemExit) as cm:

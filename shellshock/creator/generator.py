@@ -10,7 +10,7 @@ from shellsuite.protocol import contract
 
 from .spec import WebShellSpec
 
-from . import drivers
+from . import auth, drivers
 
 _TEMPLATES = importlib.resources.files("shellshock.creator") / "templates"
 
@@ -29,9 +29,16 @@ def _context(spec: WebShellSpec) -> dict[str, str]:
     body = drivers.DRIVER_BODIES.get(driver)
     if body is None:
         raise ValueError(f"driver not implemented: {driver!r}")
+
+    if spec.mode == "plain":
+        auth_block = "$__ss_ok = true;"
+    else:  # "auth" today; "encrypted" behaves the same until implemented
+        auth_block = auth.guard(spec.vector, auth.secret_hash(spec.secret))
+
     return {
         "param_name": contract.PARAM_NAMES[spec.vector],
         "driver_body": body,
+        "auth_block": auth_block,
         "response_begin": contract.RESPONSE_BEGIN,
         "response_end": contract.RESPONSE_END,
     }

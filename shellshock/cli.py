@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from shellsuite.protocol import contract
@@ -24,7 +25,11 @@ def _cmd_create(args: argparse.Namespace) -> int:
         secret=args.secret,
         driver=args.driver,
     )
-    dest = generator.write(spec, Path(args.out) if args.out else None)
+    try:
+        dest = generator.write(spec, Path(args.out) if args.out else None)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     print(dest)
     return 0
 
@@ -35,10 +40,10 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
 
     create = actions.add_parser("create", help="generate a webshell")
     create.add_argument("--vector", choices = contract.VECTORS, required=True)
-    create.add_argument("--mode", choices = ["plain"], required=True)
+    create.add_argument("--mode", choices = ["plain", "auth"], required=True)
     create.add_argument("--name", default = "shell")
     create.add_argument("--out", default = None, help = "output path")
-    create.add_argument("--secret", default = None, help = "password (auth/encrypted)")
+    create.add_argument("--secret", default = None, help = "password (required for auth/encrypted)")
     create.add_argument(
         "--driver",
         choices=list(drivers.DRIVERS),

@@ -30,8 +30,8 @@ class WebShellSpec:
             raise ValueError(f"unknown mode: {self.mode!r}")
         if self.driver is not None and self.driver not in drivers.DRIVERS:
             raise ValueError(f"unknown driver: {self.driver!r}")
-        if self.mode == "encrypted" and not self.secret:
-            raise ValueError("encrypted mode requires a secret")
+        if self.mode in ("auth", "encrypted") and not self.secret:
+            raise ValueError(f"{self.mode} mode requires a secret")
 
     @property
     def resolved_driver(self) -> str:
