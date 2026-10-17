@@ -18,3 +18,27 @@ What was tested:
 Notes:
 - `shellshock/` and `shellblock/` were not modified. They become importable packages (each needs `__init__.py` and `cli.py`) in later tasks.
 - Build artifacts (`shellsuite.egg-info/`, `build/`) are covered by `.gitignore`.
+
+
+[2026-10-17 11:20] Task: ShellShock Creator skeleton, template engine and the `cookie` vector (objectives 1.1 and 1.5).
+
+What was done:
+- Added `shellsuite/protocol/` with `contract.py`: the frozen Creator<->Manager contract. Taxonomy (`VECTORS`, `MODES`), channel/parameter names per vector (`PARAM_NAMES`, `AUTH_PARAM_NAMES` reserved for auth), the ordered driver list (`DRIVERS`, `DEFAULT_DRIVER`), and the response markers (`RESPONSE_BEGIN`/`RESPONSE_END`). Shared by both modules.
+- Added the `shellshock` package: `__init__.py`, `cli.py`, and `creator/` (`__init__.py`, `spec.py`, `generator.py`, `templates/cookie.php.tmpl`).
+- `shellshock/creator/spec.py`: frozen `WebShellSpec(vector, mode, name, secret, driver)` with `validate()` and `resolved_driver`.
+- `shellshock/creator/generator.py`: renders the vector template via a `{{token}}` replacement engine (fails on leftover placeholders) and writes the `.php` file. Only ONE driver is embedded (the chosen one, or `DEFAULT_DRIVER` = `shell_exec`); no runtime probing of the target.
+- `shellshock/cli.py`: registers the module under the command name `shock` (package stays `shellshock`) with a nested `create` action: `--vector`, `--mode`, `--name`, `--out`, `--secret`, `--driver`. `create` does not upload; upload is deferred to its own action (objective 1.4).
+- `shellsuite/config.py`: added `shells_dir()`; default output is `~/.shellsuite/shells/<name>.php` (overridable with `--out`).
+- `pyproject.toml`: declared template package-data.
+- Added `tests/test_creator.py` and `tests/test_shellshock_cli.py` (stdlib unittest).
+
+What was tested:
+- `pip install -e .` succeeds and picks up the new `shellshock` package.
+- `shellsuite --help` lists `shock`; `shellsuite shock --help` lists `create` (exit 0).
+- `shellsuite shock create --vector cookie --mode plain --out <path>` writes the PHP; default driver renders `shell_exec`, `--driver passthru` renders `passthru` with output buffering.
+- Default output path resolves to `$SHELLSUITE_HOME/shells/<name>.php`.
+- `python -m unittest discover -s tests -v` -> 16 tests, all OK.
+
+Notes:
+- Contract change from the draft: the driver set is a list with a single default embedded at generation time (avoids runtime function probing, which is noisy). `--driver` opts into another.
+- DVWA/lab verification of the cookie vector (curl with `Cookie: shellshock=id`) still pending; not run in this task.

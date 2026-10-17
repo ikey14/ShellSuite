@@ -35,3 +35,10 @@ def registry_path() -> Path:
 def log_path() -> Path:
     """Path to the shared log file."""
     return data_dir() / "shellsuite.log"
+
+
+def shells_dir() -> Path:
+    """Directory where generated webshells are written by default."""
+    directory = data_dir() / "shells"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
