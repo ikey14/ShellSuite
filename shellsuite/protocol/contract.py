@@ -3,6 +3,9 @@
 The webshell PHP the Creator emits and the requests the Manager sends both
 implement this contract. Anything here is shared by both modules, so changing
 it changes both at once (AGENTS.md section 4).
+
+Generated PHP targets PHP 5.2+ (the lab runs an old interpreter), so templates
+must avoid newer syntax (e.g. no null-coalescing `??`, no short-array `[]`).
 """
 
 from __future__ import annotations

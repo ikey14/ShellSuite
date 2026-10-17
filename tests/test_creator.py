@@ -54,6 +54,11 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("passthru(", php)
         self.assertNotIn("shell_exec", php)
 
+    def test_cookie_plain_is_php52_compatible(self):
+        php = generator.generate(WebShellSpec(vector="cookie", mode="plain"))
+        self.assertNotIn("??", php)  # null-coalescing is PHP 7.0+
+        self.assertIn("isset(", php)
+
     def test_write_default_goes_under_shells_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):

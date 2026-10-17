@@ -42,3 +42,26 @@ What was tested:
 Notes:
 - Contract change from the draft: the driver set is a list with a single default embedded at generation time (avoids runtime function probing, which is noisy). `--driver` opts into another.
 - DVWA/lab verification of the cookie vector (curl with `Cookie: shellshock=id`) still pending; not run in this task.
+
+
+[2026-10-17 12:05] Task: fix generated webshell failing on the lab (parse error).
+
+Symptom:
+- Deploying the cookie shell to Metasploitable and running `curl --cookie "shellshock=id" http://192.168.1.166/dvwa/hackable/uploads/shell.php` returned a PHP parse error: `syntax error, unexpected '?' ... on line 5`.
+
+Cause:
+- The template used the null-coalescing operator `$_COOKIE["shellshock"] ?? ""`, which is PHP 7.0+ only. The lab runs PHP 5.2.4 (Metasploitable 2 / Apache 2.2.8), so the whole file failed to parse and nothing executed.
+
+What was done:
+- `shellshock/creator/templates/cookie.php.tmpl`: replaced `?? ""` with the PHP 5.2-compatible `isset($_COOKIE["{{param_name}}"]) ? $_COOKIE["{{param_name}}"] : ""`.
+- `shellsuite/protocol/contract.py`: documented that generated PHP targets PHP 5.2+ (no `??`, no short-array `[]`).
+- `tests/test_creator.py`: added `test_cookie_plain_is_php52_compatible` asserting the output contains no `??` and uses `isset(`.
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 17 tests, all OK.
+- Regenerated the cookie/passthru shell; line 5 is now the `isset(...) ? ... : ""` form.
+- Note: `php -l` lint not run (no PHP on the host). Lab re-verification (curl) still to be done by hand after redeploying the regenerated file.
+
+Compatibility notes for future vectors/modes:
+- Avoid PHP 7+ syntax in templates: `??`, `<=>`, spread, scalar type hints, return type declarations, short-array `[]`, anonymous classes.
+- The already-deployed `shell.php` on the lab is stale and must be regenerated/replaced.
