@@ -30,20 +30,6 @@ AUTH_PARAM_NAMES: dict[str, str] = {
     "post": "shellshock_auth",
 }
 
-# --- Command execution drivers ---------------------------------------------
-
-# PHP functions the webshell can use to run a command. The FIRST entry is the
-# default; the rest are only used if the user picks one with `create --driver`.
-# The generated shell embeds exactly ONE driver (no runtime probing), to stay
-# quiet on the target.
-DRIVERS: tuple[str, ...] = (
-    "shell_exec",
-    "system",
-    "passthru",
-)
-
-DEFAULT_DRIVER: str = DRIVERS[0]
-
 # --- Response framing ------------------------------------------------------
 
 RESPONSE_BEGIN = "<!--SSB-->"

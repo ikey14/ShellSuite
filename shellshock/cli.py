@@ -9,6 +9,9 @@ from shellsuite.protocol import contract
 from shellshock.creator import generator
 from shellshock.creator.spec import WebShellSpec
 
+#For some reason this won't work with just "creator", it has to be ".creator".
+from .creator import drivers
+
 # The word the user types after `shellsuite` (the package is still `shellshock`).
 COMMAND = "shock"
 
@@ -38,9 +41,9 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
     create.add_argument("--secret", default = None, help = "password (auth/encrypted)")
     create.add_argument(
         "--driver",
-        choices=list(contract.DRIVERS),
+        choices=list(drivers.DRIVERS),
         default=None,
-        help=f"PHP execution function (default: {contract.DEFAULT_DRIVER})",
+        help=f"PHP execution function (default: {drivers.DEFAULT_DRIVER})",
     )
     create.set_defaults(handler=_cmd_create)
 

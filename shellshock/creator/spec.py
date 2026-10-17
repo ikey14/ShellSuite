@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 from shellsuite.protocol import contract
 
+from . import drivers
+
 
 @dataclass(frozen=True)
 class WebShellSpec:
@@ -26,7 +28,7 @@ class WebShellSpec:
             raise ValueError(f"unknown vector: {self.vector!r}")
         if self.mode not in contract.MODES:
             raise ValueError(f"unknown mode: {self.mode!r}")
-        if self.driver is not None and self.driver not in contract.DRIVERS:
+        if self.driver is not None and self.driver not in drivers.DRIVERS:
             raise ValueError(f"unknown driver: {self.driver!r}")
         if self.mode == "encrypted" and not self.secret:
             raise ValueError("encrypted mode requires a secret")
@@ -34,4 +36,4 @@ class WebShellSpec:
     @property
     def resolved_driver(self) -> str:
         """The driver actually embedded: the chosen one, or the default."""
-        return self.driver or contract.DEFAULT_DRIVER
+        return self.driver or drivers.DEFAULT_DRIVER

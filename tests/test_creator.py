@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from shellshock.creator import generator
+from shellshock.creator import generator, drivers
 from shellshock.creator.spec import WebShellSpec
 from shellsuite.protocol import contract
 
@@ -32,7 +32,7 @@ class SpecTests(unittest.TestCase):
 
     def test_default_driver_is_first(self):
         spec = WebShellSpec(vector="cookie", mode="plain")
-        self.assertEqual(spec.resolved_driver, contract.DEFAULT_DRIVER)
+        self.assertEqual(spec.resolved_driver, drivers.DEFAULT_DRIVER)
 
 
 class GeneratorTests(unittest.TestCase):
@@ -41,10 +41,10 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn(contract.PARAM_NAMES["cookie"], php)
         self.assertIn(contract.RESPONSE_BEGIN, php)
         self.assertIn(contract.RESPONSE_END, php)
-        self.assertIn(contract.DEFAULT_DRIVER, php)
+        self.assertIn(drivers.DEFAULT_DRIVER, php)
         self.assertNotIn("{{", php)  # every placeholder was filled
-        for other in contract.DRIVERS:  # only ONE driver is embedded
-            if other != contract.DEFAULT_DRIVER:
+        for other in drivers.DRIVERS:  # only ONE driver is embedded
+            if other != drivers.DEFAULT_DRIVER:
                 self.assertNotIn(other, php)
 
     def test_explicit_driver_is_embedded(self):
