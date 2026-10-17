@@ -59,6 +59,34 @@ class GeneratorTests(unittest.TestCase):
         self.assertNotIn("??", php)  # null-coalescing is PHP 7.0+
         self.assertIn("isset(", php)
 
+    def test_header_plain_uses_cgi_style_server_key(self):
+        php = generator.generate(WebShellSpec(vector="header", mode="plain"))
+        self.assertIn("$_SERVER", php)
+        self.assertIn('"HTTP_"', php)
+        self.assertIn("strtoupper", php)
+        self.assertIn('str_replace("-", "_"', php)
+        self.assertIn(contract.PARAM_NAMES["header"], php)
+        self.assertIn(contract.RESPONSE_BEGIN, php)
+        self.assertIn(contract.RESPONSE_END, php)
+        self.assertNotIn("{{", php)
+        # The header the Manager sends must map to the key PHP exposes it as.
+        expected = "HTTP_" + contract.PARAM_NAMES["header"].upper().replace("-", "_")
+        self.assertEqual(expected, "HTTP_X_SHELLSHOCK")
+
+    def test_post_plain_reads_post_superglobal(self):
+        php = generator.generate(WebShellSpec(vector="post", mode="plain"))
+        self.assertIn("$_POST", php)
+        self.assertIn('$_POST["%s"]' % contract.PARAM_NAMES["post"], php)
+        self.assertIn(contract.RESPONSE_BEGIN, php)
+        self.assertIn(contract.RESPONSE_END, php)
+        self.assertNotIn("{{", php)
+
+    def test_every_vector_is_php52_compatible(self):
+        for vector in contract.VECTORS:
+            php = generator.generate(WebShellSpec(vector=vector, mode="plain"))
+            self.assertNotIn("??", php, vector)  # null-coalescing is PHP 7.0+
+            self.assertIn("isset(", php, vector)
+
     def test_write_default_goes_under_shells_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):

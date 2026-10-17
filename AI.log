@@ -65,3 +65,23 @@ What was tested:
 Compatibility notes for future vectors/modes:
 - Avoid PHP 7+ syntax in templates: `??`, `<=>`, spread, scalar type hints, return type declarations, short-array `[]`, anonymous classes.
 - The already-deployed `shell.php` on the lab is stale and must be regenerated/replaced.
+
+
+[2026-10-17 17:58] Task: tests for the header and post vector webshells.
+
+Context:
+- Commit b11cd1d added `header.php.tmpl` and `post.php.tmpl` plus the CLI choices, hand-written and verified via curl, with tests deliberately left for a follow-up.
+
+What was done:
+- `tests/test_creator.py`: added generator tests for the new vectors.
+  - `test_header_plain_uses_cgi_style_server_key`: asserts the header shell reads `$_SERVER`, uses the `"HTTP_"` prefix with `strtoupper`/`str_replace("-", "_")`, embeds the contract header name, carries the response markers, leaves no `{{` placeholders, and that `X-ShellShock` maps to the CGI key `HTTP_X_SHELLSHOCK`.
+  - `test_post_plain_reads_post_superglobal`: asserts the post shell reads `$_POST["shellshock"]` and carries the response markers with no leftover placeholders.
+  - `test_every_vector_is_php52_compatible`: loops over all vectors asserting no `??` and the use of `isset(` (PHP 5.2 target).
+- `tests/test_shellshock_cli.py`: added an end-to-end helper `_create(vector)` and `test_create_header_reads_server_superglobal` / `test_create_post_reads_post_superglobal`, which run `shellsuite shock create --vector header|post` and check the written source.
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 22 tests, all OK.
+
+Notes:
+- These tests are generation/CLI-level; end-to-end execution on the lab was already done by hand via curl (see previous commit message) and is not part of the automated suite.
+- `cli.py` still hard-codes the vector choices rather than deriving them from `contract.VECTORS`; left as-is for now (candidate cleanup).

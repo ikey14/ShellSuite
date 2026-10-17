@@ -37,6 +37,26 @@ class ShellshockCliTests(unittest.TestCase):
             with open(out, encoding="utf-8") as fh:
                 self.assertIn("system(", fh.read())
 
+    def _create(self, vector: str) -> str:
+        """Generate a webshell via the CLI and return its source."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "shell.php")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cli.main(
+                    ["shock", "create", "--vector", vector,
+                     "--mode", "plain", "--out", out]
+                )
+            self.assertEqual(rc, 0)
+            with open(out, encoding="utf-8") as fh:
+                return fh.read()
+
+    def test_create_header_reads_server_superglobal(self):
+        self.assertIn("$_SERVER", self._create("header"))
+
+    def test_create_post_reads_post_superglobal(self):
+        self.assertIn('$_POST["shellshock"]', self._create("post"))
+
     def test_bad_vector_fails_cleanly(self):
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf), self.assertRaises(SystemExit) as cm:
