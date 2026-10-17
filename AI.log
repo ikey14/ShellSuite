@@ -1,0 +1,20 @@
+[2026-10-17 10:26] Task: create the shared `shellsuite/` package and the top-level CLI.
+
+What was done:
+- Added `pyproject.toml` (setuptools) declaring the `shellsuite` project and a console script `shellsuite = shellsuite.cli:main`. No runtime dependencies.
+- Added `shellsuite/__init__.py` with `__version__ = "0.1.0"`.
+- Added `shellsuite/config.py`: shared path resolution. State lives in `~/.shellsuite`, overridable via `SHELLSUITE_HOME`. Exposes `data_dir()`, `registry_path()`, `log_path()`, and `MODULE_NAMES`.
+- Added `shellsuite/logging_setup.py`: single place that configures logging (console + file) so all modules format output the same way.
+- Added `shellsuite/cli.py`: the `shellsuite <module> <action>` dispatcher. Modules are discovered lazily by importing `<module>.cli` and calling its `register_parser(subparsers)`. A module that is missing, empty or broken is skipped, so ShellShock keeps working with ShellBlock absent (architecture rule 1).
+- Added `tests/__init__.py` and `tests/test_cli.py` (stdlib unittest).
+
+What was tested:
+- `pip install -e .` succeeds.
+- `shellsuite --version` prints `shellsuite 0.1.0` (exit 0).
+- `shellsuite --help` and `shellsuite` with no args print help (exit 0).
+- `shellsuite shellblock info` fails cleanly with "invalid choice" (exit 2), no traceback -- expected until shellblock becomes a package.
+- `python -m unittest discover -s tests -v` -> 4 tests, all OK.
+
+Notes:
+- `shellshock/` and `shellblock/` were not modified. They become importable packages (each needs `__init__.py` and `cli.py`) in later tasks.
+- Build artifacts (`shellsuite.egg-info/`, `build/`) are covered by `.gitignore`.
