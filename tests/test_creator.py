@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from shellshock.creator import auth, generator, drivers
+from shellshock.creator import auth, drivers, generator, readers
 from shellshock.creator.spec import WebShellSpec
 from shellsuite.protocol import contract
 
@@ -123,6 +123,20 @@ class GeneratorTests(unittest.TestCase):
     def test_guard_rejects_unknown_vector(self):
         with self.assertRaises(ValueError):
             auth.guard("nope", "deadbeef")
+
+    def test_readers_cover_contract_vectors(self):
+        self.assertEqual(set(readers._READERS), set(contract.VECTORS))
+        readers.assert_conformance()
+
+    def test_read_is_fully_rendered(self):
+        for vector in contract.VECTORS:
+            php = readers.read(vector, "$__ss_x", "NAME")
+            self.assertNotIn("{", php, vector)
+
+    def test_assert_conformance_detects_mismatch(self):
+        with mock.patch.dict(readers._READERS, {"extra": "x"}):
+            with self.assertRaises(ValueError):
+                readers.assert_conformance()
 
     def test_write_default_goes_under_shells_dir(self):
         with tempfile.TemporaryDirectory() as tmp:

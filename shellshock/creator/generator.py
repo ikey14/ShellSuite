@@ -10,9 +10,11 @@ from shellsuite.protocol import contract
 
 from .spec import WebShellSpec
 
-from . import auth, drivers
+from . import auth, drivers, readers
 
-_TEMPLATES = importlib.resources.files("shellshock.creator") / "templates"
+_TEMPLATE = (
+    importlib.resources.files("shellshock.creator") / "templates" / "webshell.php.tmpl"
+)
 
 
 def _render(text: str, values: dict[str, str]) -> str:
@@ -30,13 +32,15 @@ def _context(spec: WebShellSpec) -> dict[str, str]:
     if body is None:
         raise ValueError(f"driver not implemented: {driver!r}")
 
+    cmd_read = readers.read(spec.vector, "$__ss_cmd", contract.PARAM_NAMES[spec.vector])
+
     if spec.mode == "plain":
         auth_block = "$__ss_ok = true;"
     else:  # "auth" today; "encrypted" behaves the same until implemented
         auth_block = auth.guard(spec.vector, auth.secret_hash(spec.secret))
 
     return {
-        "param_name": contract.PARAM_NAMES[spec.vector],
+        "cmd_read": cmd_read,
         "driver_body": body,
         "auth_block": auth_block,
         "response_begin": contract.RESPONSE_BEGIN,
@@ -46,8 +50,9 @@ def _context(spec: WebShellSpec) -> dict[str, str]:
 
 def generate(spec: WebShellSpec) -> str:
     """Return the PHP source for ``spec`` (no file I/O)."""
+    readers.assert_conformance()
     spec.validate()
-    template = (_TEMPLATES / f"{spec.vector}.php.tmpl").read_text(encoding="utf-8")
+    template = _TEMPLATE.read_text(encoding="utf-8")
     return _render(template, _context(spec))
 
 

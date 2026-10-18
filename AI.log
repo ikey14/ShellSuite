@@ -124,3 +124,25 @@ What was tested:
 
 Notes:
 - Adding a future vector to the contract now needs one `_READERS` entry; the coverage test will fail until it is added.
+
+
+[2026-10-17 20:20] Task: consolidate per-vector reading into one Creator module (Option 3).
+
+Context:
+- Two Creator sites encoded the per-vector PHP superglobal: the per-vector templates (command read) and `auth.py` (`_READERS`). Goal: one source for the vector->PHP-superglobal mapping, used by both the command and the credential.
+
+What was done:
+- Added `shellshock/creator/readers.py`: `_READERS[vector]` holds the PHP that assigns a channel value to a variable (`{var}`/`{name}` placeholders); `read(vector, var, name)` renders it and raises `ValueError` for an unknown vector; `assert_conformance()` raises `ValueError` unless `set(_READERS) == set(contract.VECTORS)`.
+- `shellshock/creator/auth.py`: dropped its own `_READERS`; `guard()` now delegates to `readers.read(vector, "$__ss_auth", ...)`.
+- `shellshock/creator/generator.py`: builds `cmd_read` from `readers.read(...)`; uses a single template; calls `readers.assert_conformance()` at the top of `generate()` so any drift fails loudly at generation time (the CLI already turns `ValueError` into a clean error + exit 2).
+- Templates: replaced `cookie.php.tmpl` / `header.php.tmpl` / `post.php.tmpl` with a single `webshell.php.tmpl` using `{{cmd_read}}` + `{{auth_block}}` (deleted the three).
+- `tests/test_creator.py`: added `test_readers_cover_contract_vectors`, `test_read_is_fully_rendered`, `test_assert_conformance_detects_mismatch`.
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 32 tests, all OK.
+- Manually generated all vectors x {plain, auth}: output is behavior-identical to before, with one cosmetic difference - in header/auth the temporary key variable is now `$__ss_key` (was `$__ss_akey`) because both reads share the lone reader; reassignment is harmless.
+
+Notes:
+- Runtime guards (outside tests, per request): `read()` raises for an unknown vector; `assert_conformance()` catches both missing and orphaned readers. No import-time check, to preserve the dispatcher's graceful skip on ImportError.
+- Vector enumeration in the Creator went from two sites (templates + auth) to one (`readers._READERS`), guarded by the conformance test and `assert_conformance()`.
+- `drivers.py` untouched (drivers are per-execution-function, not per-vector).

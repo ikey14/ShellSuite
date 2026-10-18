@@ -11,20 +11,9 @@ import hashlib
 
 from shellsuite.protocol import contract
 
-ALGORITHM = "sha256"
+from . import readers
 
-# How each vector reads its credential. Value is a PHP statement (or statements)
-# that assign the supplied credential to $__ss_auth; ``{name}`` is filled with
-# the vector's channel name from contract.AUTH_PARAM_NAMES. Adding a vector to
-# the contract means adding one entry here; guard() raises if one is missing.
-_READERS: dict[str, str] = {
-    "cookie": '$__ss_auth = isset($_COOKIE["{name}"]) ? $_COOKIE["{name}"] : "";',
-    "header": (
-        '$__ss_akey = "HTTP_" . strtoupper(str_replace("-", "_", "{name}"));\n'
-        '$__ss_auth = isset($_SERVER[$__ss_akey]) ? $_SERVER[$__ss_akey] : "";'
-    ),
-    "post": '$__ss_auth = isset($_POST["{name}"]) ? $_POST["{name}"] : "";',
-}
+ALGORITHM = "sha256"
 
 
 def secret_hash(secret: str) -> str:
@@ -34,10 +23,10 @@ def secret_hash(secret: str) -> str:
 
 def guard(vector: str, expected_hash: str) -> str:
     """Return the PHP that reads the vector's credential and sets $__ss_ok."""
-    reader = _READERS.get(vector)
-    if reader is None:
+    name = contract.AUTH_PARAM_NAMES.get(vector)
+    if name is None:
         raise ValueError(f"no auth reader for vector: {vector!r}")
-    read = reader.format(name=contract.AUTH_PARAM_NAMES[vector])
+    read = readers.read(vector, "$__ss_auth", name)
     check = (
         f'$__ss_ok = ($__ss_auth !== "" && '
         f'hash("{ALGORITHM}", $__ss_auth) === "{expected_hash}");'
