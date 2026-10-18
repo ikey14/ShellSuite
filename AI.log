@@ -126,7 +126,7 @@ Notes:
 - Adding a future vector to the contract now needs one `_READERS` entry; the coverage test will fail until it is added.
 
 
-[2026-10-17 20:20] Task: consolidate per-vector reading into one Creator module (Option 3).
+[2026-10-17 23:20] Task: consolidate per-vector reading into one Creator module (Option 3).
 
 Context:
 - Two Creator sites encoded the per-vector PHP superglobal: the per-vector templates (command read) and `auth.py` (`_READERS`). Goal: one source for the vector->PHP-superglobal mapping, used by both the command and the credential.
