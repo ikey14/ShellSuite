@@ -141,6 +141,14 @@ class GeneratorTests(unittest.TestCase):
             self.assertNotIn("__ss_encrypt", php, mode)
             self.assertNotIn("hash_hmac", php, mode)
 
+    def test_generated_shell_urldecodes_values(self):
+        for vector in contract.VECTORS:
+            for mode in ("plain", "auth", "encrypted"):
+                php = generator.generate(
+                    WebShellSpec(vector=vector, mode=mode, secret="x")
+                )
+                self.assertIn("urldecode(", php, (vector, mode))
+
     def test_guard_supports_every_contract_vector(self):
         for vector in contract.VECTORS:
             php = auth.guard(vector, "deadbeef")

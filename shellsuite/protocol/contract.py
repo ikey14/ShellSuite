@@ -30,6 +30,12 @@ AUTH_PARAM_NAMES: dict[str, str] = {
     "post": "shellshock_auth",
 }
 
+# --- Transport encoding ----------------------------------------------------
+
+# Command payloads and credentials are URL-encoded on the wire; the webshell
+# applies urldecode() before using them.
+TRANSPORT_ENCODING = "url"
+
 # --- Payload encryption (mode == "encrypted") ------------------------------
 
 # Scheme: XOR with an HMAC-SHA256 counter-mode keystream. A payload is
