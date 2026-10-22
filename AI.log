@@ -172,3 +172,36 @@ What was tested:
 
 Notes:
 - The password is not stored in the shell; only `sha256(password)` for auth. Password caveats (unsalted digest, credential sent in clear over plain HTTP) were intentionally not documented, per user instruction.
+
+
+[2026-10-22 18:05] Task: `shock upload` action (objective 1.4).
+
+What was done:
+- Added `shellshock/uploader.py`: `build_multipart()` (stdlib, hand-built multipart/form-data with a random boundary) and `upload()` (urllib POST, follows redirects, returns an `UploadResult` with success/status/final_url/error). Success is a final HTTP 200; network/timeout/status failures are returned, never raised.
+- `shellshock/cli.py`: added the `upload` action with `--file`, `--url`, `--field` (default `uploaded`), `--filename`, `--cookie`, repeatable `--header`, repeatable `--form`, `--timeout`. `--file` absolute -> as-is, otherwise resolved under `config.shells_dir()`. Result messages: success on stdout, failure on stderr; exit 0 success / 1 upload failure / 2 usage error.
+- Added `tests/test_uploader.py`: local `http.server` based tests (200 success incl. multipart body/field/cookie/header checks, 500 failure, unreachable port) and CLI tests (relative file under shells dir, missing file -> 2, invalid --form -> 2, 500 -> 1).
+
+Design notes:
+- DVWA-friendly but generic: file field defaults to `uploaded`; DVWA's `Upload=Upload` and `user_token` are supplied by the user via `--form`; session via `--cookie`. No DVWA-specific fields are injected automatically.
+- Success follows the requested rule "HTTP 200". The final URL is printed so a redirect to a login page (which can return 200) is visible.
+- No new dependencies (stdlib urllib only).
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 50 tests, all OK.
+- `shellsuite shock upload --help` shows the expected options.
+- Automated tests exercise a real local HTTP server, so the multipart request is built and sent end-to-end.
+
+Notes:
+- Real DVWA verification still pending: `shellsuite shock upload --file <shell> --url http://<dvwa>/vulnerabilities/upload/ --field uploaded --form Upload=Upload --form user_token=<token> --cookie "PHPSESSID=<sess>; security=low"`.
+
+
+[2026-10-22 18:20] Task: move the uploader into a package.
+
+What was done:
+- Replaced the single `shellshock/uploader.py` with a package `shellshock/uploader/` (mirroring `shellshock/creator/`): `__init__.py` re-exports `UploadResult`, `build_multipart`, `upload`; `upload.py` holds the implementation.
+- No behavior change; `shellshock/cli.py` keeps `from . import uploader` and `uploader.upload(...)`.
+
+What was tested:
+- Reinstalled editable so the new subpackage is discovered.
+- `python -m unittest discover -s tests` -> 50 tests, all OK.
+- `shellsuite shock upload --help` still works; `from shellshock import uploader` resolves to `shellshock/uploader/__init__.py` and exposes `upload`.
