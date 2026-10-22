@@ -30,6 +30,14 @@ AUTH_PARAM_NAMES: dict[str, str] = {
     "post": "shellshock_auth",
 }
 
+# --- Payload encryption (mode == "encrypted") ------------------------------
+
+# Scheme: XOR with an HMAC-SHA256 counter-mode keystream. A payload is
+# "<ENCRYPTED_PREFIX><base64url(nonce || ciphertext)>" (base64url, no padding).
+ENCRYPTION = "xor-hmac-sha256"
+ENCRYPTED_PREFIX = "SSENC1."
+NONCE_BYTES = 8
+
 # --- Response framing ------------------------------------------------------
 
 RESPONSE_BEGIN = "<!--SSB-->"

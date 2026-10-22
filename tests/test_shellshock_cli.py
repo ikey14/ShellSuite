@@ -84,6 +84,34 @@ class ShellshockCliTests(unittest.TestCase):
             self.assertNotEqual(rc, 0)
             self.assertNotIn("Traceback", buf.getvalue())
 
+    def test_create_encrypted_writes_decrypting_shell(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "shell.php")
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = cli.main(
+                    ["shock", "create", "--vector", "cookie", "--mode", "encrypted",
+                     "--secret", "hunter2", "--out", out]
+                )
+            self.assertEqual(rc, 0)
+            with open(out, encoding="utf-8") as fh:
+                content = fh.read()
+            self.assertIn("__ss_decrypt", content)
+            self.assertIn("__ss_encrypt", content)
+            self.assertIn("SSENC1.", content)
+
+    def test_create_encrypted_without_secret_fails_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "shell.php")
+            buf = io.StringIO()
+            with contextlib.redirect_stderr(buf):
+                rc = cli.main(
+                    ["shock", "create", "--vector", "cookie", "--mode", "encrypted",
+                     "--out", out]
+                )
+            self.assertNotEqual(rc, 0)
+            self.assertNotIn("Traceback", buf.getvalue())
+
     def test_bad_vector_fails_cleanly(self):
         buf = io.StringIO()
         with contextlib.redirect_stderr(buf), self.assertRaises(SystemExit) as cm:

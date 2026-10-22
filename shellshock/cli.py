@@ -40,7 +40,7 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
 
     create = actions.add_parser("create", help="generate a webshell")
     create.add_argument("--vector", choices = contract.VECTORS, required=True)
-    create.add_argument("--mode", choices = ["plain", "auth"], required=True)
+    create.add_argument("--mode", choices = contract.MODES, required=True)
     create.add_argument("--name", default = "shell")
     create.add_argument("--out", default = None, help = "output path")
     create.add_argument("--secret", default = None, help = "password (required for auth/encrypted)")

@@ -88,7 +88,7 @@ class GeneratorTests(unittest.TestCase):
 
     def test_every_vector_is_php52_compatible(self):
         for vector in contract.VECTORS:
-            for mode in ("plain", "auth"):
+            for mode in ("plain", "auth", "encrypted"):
                 php = generator.generate(
                     WebShellSpec(vector=vector, mode=mode, secret="x")
                 )
@@ -114,6 +114,32 @@ class GeneratorTests(unittest.TestCase):
         self.assertNotIn("hash(", php)
         for name in contract.AUTH_PARAM_NAMES.values():
             self.assertNotIn(name, php)
+
+    def test_encrypted_includes_crypto_and_decrypt(self):
+        for vector in contract.VECTORS:
+            php = generator.generate(
+                WebShellSpec(vector=vector, mode="encrypted", secret="hunter2")
+            )
+            self.assertIn("function __ss_decrypt", php, vector)
+            self.assertIn("function __ss_encrypt", php, vector)
+            self.assertIn('hash_hmac("sha256"', php, vector)
+            self.assertIn(contract.ENCRYPTED_PREFIX, php, vector)
+            self.assertIn(
+                "$__ss_cmd = __ss_decrypt($__ss_cmd, $__ss_auth);", php, vector
+            )
+            self.assertIn(
+                "__ss_encrypt(__ss_run($__ss_cmd), $__ss_auth)", php, vector
+            )
+            self.assertIn(contract.AUTH_PARAM_NAMES[vector], php, vector)
+
+    def test_non_encrypted_modes_have_no_crypto(self):
+        for mode in ("plain", "auth"):
+            php = generator.generate(
+                WebShellSpec(vector="cookie", mode=mode, secret="x")
+            )
+            self.assertNotIn("__ss_decrypt", php, mode)
+            self.assertNotIn("__ss_encrypt", php, mode)
+            self.assertNotIn("hash_hmac", php, mode)
 
     def test_guard_supports_every_contract_vector(self):
         for vector in contract.VECTORS:

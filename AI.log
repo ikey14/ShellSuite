@@ -146,3 +146,29 @@ Notes:
 - Runtime guards (outside tests, per request): `read()` raises for an unknown vector; `assert_conformance()` catches both missing and orphaned readers. No import-time check, to preserve the dispatcher's graceful skip on ImportError.
 - Vector enumeration in the Creator went from two sites (templates + auth) to one (`readers._READERS`), guarded by the conformance test and `assert_conformance()`.
 - `drivers.py` untouched (drivers are per-execution-function, not per-vector).
+
+
+[2026-10-22 16:40] Task: encrypted-mode webshells (objective 1.3).
+
+What was done:
+- Added `shellsuite/crypto.py`: Python implementation of the shared payload scheme. XOR with a keystream from HMAC-SHA256(password, nonce || counter). Envelope is `<prefix><base64url(nonce || ciphertext)>` (base64url, no padding). Exposes `encrypt(text, password, nonce=None)` and `decrypt(payload, password)`.
+- Added `shellshock/creator/crypto.py`: Creator-side PHP emission. `php_helpers()` returns `__ss_b64d`/`__ss_b64e`/`__ss_keystream`/`__ss_decrypt`/`__ss_encrypt`; `decrypt_block()` decrypts the payload in place; `encrypt_expr()` encrypts the command output. Constants injected from the contract.
+- `shellsuite/protocol/contract.py`: added `ENCRYPTION`, `ENCRYPTED_PREFIX` ("SSENC1."), `NONCE_BYTES` (8).
+- `shellshock/creator/generator.py`: `_context()` now builds `crypto_helpers`, `decrypt_block` and `output_expr`. Encrypted mode gets the auth guard (mandatory) + crypto helpers + payload decryption; plain/auth are unchanged (`output_expr` = `__ss_run($__ss_cmd)`).
+- `templates/webshell.php.tmpl`: added `{{crypto_helpers}}`, `{{decrypt_block}}`, `{{output_expr}}`. Empty placeholders for plain/auth add only a blank line.
+- `shellshock/cli.py`: `--mode` now uses `contract.MODES` (all three modes implemented).
+- Tests: new `tests/test_crypto.py` (round-trip, empty payload, prefix/urlsafe alphabet, wrong password, non-envelope rejection, deterministic/random nonce); `tests/test_creator.py` added `test_encrypted_includes_crypto_and_decrypt` and `test_non_encrypted_modes_have_no_crypto`, and the PHP-5.2 loop now covers `encrypted`; `tests/test_shellshock_cli.py` added encrypted create + encrypted-without-secret tests.
+
+Design decisions:
+- Both directions encrypted: the shell decrypts the command and encrypts the response. The Python `decrypt` is used by the Manager later and by tests.
+- Same supplied credential is the auth secret and the decryption key, so decrypting requires the password (auth is mandatory, not decorative).
+- Per-message nonce: the Manager generates it for requests; the shell generates it for responses (`md5(uniqid... , true)` first 8 bytes, PHP 5.2-safe). An `SSENC1.` prefix makes the shell reject non-enveloped (plaintext) input.
+- No extra MAC/tag: auth plus envelope validation prevent execution on wrong key or plaintext.
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 43 tests, all OK.
+- Manually generated cookie/plain and cookie/encrypted shells and inspected the PHP: encrypted includes the crypto helpers, decrypts the payload, and wraps the output with `__ss_encrypt`; plain is unchanged in behavior.
+- Note: `php -l` / lab execution not run on the host (no PHP). Cross-language verification (Python encrypt -> PHP decrypt, and PHP encrypt -> Python decrypt) must be done on the lab.
+
+Notes:
+- The password is not stored in the shell; only `sha256(password)` for auth. Password caveats (unsalted digest, credential sent in clear over plain HTTP) were intentionally not documented, per user instruction.

