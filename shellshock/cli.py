@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from shellshock.creator.spec import WebShellSpec
 #For some reason this won't work with just "creator", it has to be ".creator".
 from .creator import drivers
 from . import uploader
-from .manager import client
+from .manager import client, registry
 
 # The word the user types after `shellsuite` (the package is still `shellshock`).
 COMMAND = "shock"
@@ -113,14 +114,80 @@ def _cmd_manage_connect(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    if result.success:
-        sys.stdout.write(f"connect successful: {result.output}")
-        if not result.output.endswith("\n"):
-            sys.stdout.write("\n")
+    if not result.success:
+        print(f"connect failed: {result.error}", file=sys.stderr)
+        return 1
+
+    try:
+        store = registry.Registry()
+        store.load()
+        store.upsert(
+            url=shell.url,
+            vector=shell.vector,
+            mode=shell.mode,
+            has_secret=shell.mode in ("auth", "encrypted"),
+            name=args.name,
+        )
+        store.save()
+    except (registry.RegistryError, OSError) as exc:
+        print(f"warning: could not register shell: {exc}", file=sys.stderr)
+
+    sys.stdout.write(f"connect successful: {result.output}")
+    if not result.output.endswith("\n"):
+        sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_manage_list(args: argparse.Namespace) -> int:
+    try:
+        store = registry.Registry()
+        store.load()
+    except registry.RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.asc:
+        descending = False
+    elif args.desc:
+        descending = True
+    else:
+        descending = args.order in registry.DATE_FIELDS
+
+    try:
+        records = store.query(
+            order=args.order, descending=descending, filters=tuple(args.filter)
+        )
+    except registry.RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.json:
+        payload = {
+            "version": registry.REGISTRY_VERSION,
+            "shells": [record.to_dict() for record in records],
+        }
+        print(json.dumps(payload, indent=2))
         return 0
 
-    print(f"connect failed: {result.error}", file=sys.stderr)
-    return 1
+    if not records:
+        print("no shells registered")
+        return 0
+
+    blocks = []
+    for record in records:
+        title = record.name or record.url
+        blocks.append(
+            f"== {title} ==\n"
+            f"id:         {record.id}\n"
+            f"url:        {record.url}\n"
+            f"vector:     {record.vector}\n"
+            f"mode:       {record.mode}\n"
+            f"has_secret: {'yes' if record.has_secret else 'no'}\n"
+            f"created:    {record.created_at}\n"
+            f"last_used:  {record.last_used}"
+        )
+    print("\n\n".join(blocks))
+    return 0
 
 
 def register_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -172,9 +239,28 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
     connect.add_argument("--vector", choices=contract.VECTORS, required=True)
     connect.add_argument("--mode", choices=contract.MODES, required=True)
     connect.add_argument("--secret", default=None, help="password (required for auth/encrypted)")
-    connect.add_argument("--name", default="shell", help="name for the registry (later)")
+    connect.add_argument("--name", default=None, help="name to register the shell under")
     connect.add_argument("--command", default="id", help="command to run (default: id)")
     connect.add_argument(
         "--timeout", type=float, default=15.0, help="request timeout in seconds"
     )
     connect.set_defaults(handler=_cmd_manage_connect)
+
+    list_cmd = manage_actions.add_parser("list", help="list known webshells")
+    list_cmd.add_argument(
+        "--order",
+        choices=registry.ORDER_FIELDS,
+        default="last_used",
+        help="sort field (default: last_used)",
+    )
+    direction = list_cmd.add_mutually_exclusive_group()
+    direction.add_argument("--asc", action="store_true", help="ascending order")
+    direction.add_argument("--desc", action="store_true", help="descending order")
+    list_cmd.add_argument(
+        "--filter",
+        action="append",
+        default=[],
+        help="filter 'attr op value' (repeatable, ANDed)",
+    )
+    list_cmd.add_argument("--json", action="store_true", help="machine-readable JSON")
+    list_cmd.set_defaults(handler=_cmd_manage_list)

@@ -5,13 +5,18 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import json
+import os
 import socket
+import tempfile
 import threading
 import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from unittest import mock
 
-from shellshock.manager import client
+from shellshock.manager import client, registry
 from shellsuite import cli, crypto
 from shellsuite.protocol import contract, encoding
 
@@ -225,6 +230,132 @@ class ManagerCliTests(_ServerTest):
             )
         self.assertEqual(rc, 1)
         self.assertIn("connect failed", err.getvalue())
+
+
+class ManagerRegistryCliTests(_ServerTest):
+    def _run(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cli.main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_connect_registers_shell(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                rc, _out, err = self._run(
+                    ["shock", "manage", "connect", "--url", _url(server),
+                     "--vector", "post", "--mode", "auth", "--secret", "hunter2",
+                     "--name", "web1"]
+                )
+                self.assertEqual(rc, 0, err)
+                store = registry.Registry()
+                store.load()
+                records = store.all()
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0].name, "web1")
+                self.assertEqual(records[0].url, _url(server))
+                self.assertEqual(records[0].vector, "post")
+                self.assertEqual(records[0].mode, "auth")
+                self.assertTrue(records[0].has_secret)
+
+    def test_connect_failure_does_not_register(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                rc, _out, err = self._run(
+                    ["shock", "manage", "connect", "--url", _url(server),
+                     "--vector", "cookie", "--mode", "auth", "--secret", "wrong"]
+                )
+                self.assertEqual(rc, 1, err)
+                store = registry.Registry()
+                store.load()
+                self.assertEqual(store.all(), [])
+
+    def test_reconnect_updates_without_duplicate(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                for name in (None, "renamed"):
+                    argv = ["shock", "manage", "connect", "--url", _url(server),
+                            "--vector", "cookie", "--mode", "plain"]
+                    if name:
+                        argv += ["--name", name]
+                    rc, _out, err = self._run(argv)
+                    self.assertEqual(rc, 0, err)
+                store = registry.Registry()
+                store.load()
+                self.assertEqual(len(store.all()), 1)
+                self.assertEqual(store.all()[0].name, "renamed")
+
+    def test_list_human_and_json(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                rc, _out, err = self._run(
+                    ["shock", "manage", "connect", "--url", _url(server),
+                     "--vector", "post", "--mode", "plain", "--name", "web1"]
+                )
+                self.assertEqual(rc, 0, err)
+
+                rc, out, err = self._run(["shock", "manage", "list"])
+                self.assertEqual(rc, 0, err)
+                self.assertIn("== web1 ==", out)
+                self.assertIn(_url(server), out)
+
+                rc, out, err = self._run(["shock", "manage", "list", "--json"])
+                self.assertEqual(rc, 0, err)
+                data = json.loads(out)
+                self.assertEqual(data["version"], registry.REGISTRY_VERSION)
+                self.assertEqual(data["shells"][0]["name"], "web1")
+
+    def test_list_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                rc, out, err = self._run(["shock", "manage", "list"])
+                self.assertEqual(rc, 0, err)
+                self.assertIn("no shells registered", out)
+
+    def test_list_order_and_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                store = registry.Registry()
+                store.load()
+                store.upsert(
+                    url="http://x/a.php", vector="cookie", mode="plain",
+                    has_secret=False, name="Alpha",
+                    now="2026-01-01T00:00:00+00:00",
+                )
+                store.upsert(
+                    url="http://x/b.php", vector="post", mode="auth",
+                    has_secret=True, name="beta",
+                    now="2026-01-02T00:00:00+00:00",
+                )
+                store.save()
+
+                rc, out, err = self._run(
+                    ["shock", "manage", "list", "--filter", "has_secret == true"]
+                )
+                self.assertEqual(rc, 0, err)
+                self.assertIn("== beta ==", out)
+                self.assertNotIn("== Alpha ==", out)
+
+    def test_list_invalid_filter_returns_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                rc, _out, err = self._run(
+                    ["shock", "manage", "list", "--filter", "bogus"]
+                )
+                self.assertEqual(rc, 2)
+                self.assertIn("invalid --filter", err)
+
+    def test_list_corrupt_returns_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                (Path(tmp) / "registry.json").write_text("{nope", encoding="utf-8")
+                rc, _out, err = self._run(["shock", "manage", "list"])
+                self.assertEqual(rc, 1)
+                self.assertIn("cannot read registry", err)
 
 
 if __name__ == "__main__":

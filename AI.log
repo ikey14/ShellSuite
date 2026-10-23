@@ -256,3 +256,34 @@ What was tested:
 Notes:
 - `connect` does not touch the registry yet (by design); `--name` is accepted for when the registry lands. There is no registry/CRUD/session/terminal yet.
 - `validate()` requires a secret for auth/encrypted; plain shells must not be given one (matching the Creator's spec rule).
+
+
+[2026-10-23 11:35] Task: registry Create + Read (first half of objective 2.6).
+
+Storage decision:
+- Registry lives at `config.registry_path()` (`~/.shellsuite/registry.json`, overridable via `SHELLSUITE_HOME`), not inside the package/repo. It is CLI-owned runtime state.
+
+What was done:
+- Added `shellshock/manager/registry.py`:
+  - Versioned JSON (`"version": 1`) with a `shells` array. Missing file -> empty registry; corrupt JSON or a newer version -> `RegistryError` (never overwritten).
+  - `ShellRecord` (id, name|null, url, vector, mode, has_secret, created_at, last_used) with to/from dict.
+  - `Registry.load()/save()` with an atomic write (tempfile + os.replace).
+  - `upsert()` keyed by URL: preserves id/created_at, updates vector/mode/has_secret/last_used, updates name only when a value is provided.
+  - `query(order, descending, filters)`: fields name/url/vector/mode/has_secret/created_at/last_used; stable sort (tie-break url+id); filter parser for `==`, `!=`, `contains` (ANDed); invalid attr/op -> `RegistryError`.
+  - `has_secret` is a boolean (true for auth/encrypted, false for plain); no password is stored.
+- `shellshock/cli.py`:
+  - `manage connect`: `--name` now defaults to None; on a successful connection it upserts the shell and saves. A registry read/write failure prints a warning and still exits 0 (the connection succeeded).
+  - New `shock manage list` with `--order`, `--asc`/`--desc` (mutually exclusive; default direction descending for date fields, ascending otherwise), repeatable `--filter "attr op value"`, and `--json`.
+    - Human output: one block per shell, title = name or URL, then id/url/vector/mode/has_secret/created/last_used.
+    - `--json`: `{"version":1,"shells":[...]}` (stable contract for the future GUI).
+    - Empty registry prints "no shells registered"; corrupt registry exits 1; invalid order/filter exits 2.
+
+What was tested:
+- New `tests/test_registry.py` (10 tests): missing/corrupt/newer-version, upsert create/dedupe/name semantics, save+load round-trip, default last_used-desc order, order by name, filters, invalid filter/order.
+- Extended `tests/test_manager_client.py` (8 tests): connect registers on success; failure does not register; reconnect updates without duplicate; list human + JSON; empty; order/filter; invalid filter -> 2; corrupt -> 1. All use a temp `SHELLSUITE_HOME`.
+- `python -m unittest discover -s tests -v` -> 83 tests, all OK.
+- Manual smoke: seeded a temp registry and confirmed `manage list` (last_used desc) and `manage list --json --filter "has_secret == true"` output.
+
+Notes:
+- Only Create (via connect) and Read (list) exist. `manage edit`/`manage delete` are the next slice; sessions and terminal remain.
+- Secrets are not stored; `has_secret` only records that a credential is needed.
