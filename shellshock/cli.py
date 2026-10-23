@@ -14,6 +14,7 @@ from shellshock.creator.spec import WebShellSpec
 #For some reason this won't work with just "creator", it has to be ".creator".
 from .creator import drivers
 from . import uploader
+from .manager import client
 
 # The word the user types after `shellsuite` (the package is still `shellshock`).
 COMMAND = "shock"
@@ -98,6 +99,30 @@ def _cmd_upload(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_manage_connect(args: argparse.Namespace) -> int:
+    shell = client.WebShell(
+        url=args.url,
+        vector=args.vector,
+        mode=args.mode,
+        secret=args.secret,
+        name=args.name,
+    )
+    try:
+        result = client.connect(shell, command=args.command, timeout=args.timeout)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if result.success:
+        sys.stdout.write(result.output)
+        if not result.output.endswith("\n"):
+            sys.stdout.write("\n")
+        return 0
+
+    print(f"connect failed: {result.error}", file=sys.stderr)
+    return 1
+
+
 def register_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(COMMAND, help="webshell creation and management")
     actions = parser.add_subparsers(dest="action", metavar="<action>")
@@ -138,3 +163,18 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
         "--timeout", type=float, default=15.0, help="request timeout in seconds"
     )
     upload.set_defaults(handler=_cmd_upload)
+
+    manage = actions.add_parser("manage", help="connect to and manage webshells")
+    manage_actions = manage.add_subparsers(dest="manage_action", metavar="<action>")
+
+    connect = manage_actions.add_parser("connect", help="connect to a deployed webshell")
+    connect.add_argument("--url", required=True, help="webshell URL")
+    connect.add_argument("--vector", choices=contract.VECTORS, required=True)
+    connect.add_argument("--mode", choices=contract.MODES, required=True)
+    connect.add_argument("--secret", default=None, help="password (required for auth/encrypted)")
+    connect.add_argument("--name", default="shell", help="name for the registry (later)")
+    connect.add_argument("--command", default="id", help="command to run (default: id)")
+    connect.add_argument(
+        "--timeout", type=float, default=15.0, help="request timeout in seconds"
+    )
+    connect.set_defaults(handler=_cmd_manage_connect)

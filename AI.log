@@ -230,3 +230,29 @@ What was tested:
 Notes:
 - Shells generated before this change do not `urldecode`; regenerate/re-upload them before wiring the Manager.
 - The Manager does not exist yet; this convention is its prerequisite (part of the 2.2 work).
+
+
+[2026-10-23 10:40] Task: Manager 2.2 - connect to every webshell type.
+
+What was done:
+- Added `shellshock/manager/` package: `__init__.py` and `client.py`.
+- `client.py`:
+  - `WebShell(url, vector, mode, secret=None, name="shell")` and `ShellResult(success, output, status, final_url, error)`.
+  - `validate()`: vector/mode must be in the contract; `auth`/`encrypted` require a secret.
+  - `_build_request()`: percent-encodes the payload and credential; `post` -> POST form-urlencoded (`PARAM_NAMES` + `AUTH_PARAM_NAMES`), `cookie` -> GET with a `Cookie` header, `header` -> GET with the configured headers. Encrypted payloads go through `shellsuite.crypto.encrypt`.
+  - `run()`: sends the request, extracts between `RESPONSE_BEGIN`/`RESPONSE_END`, decrypts when encrypted, and returns a `ShellResult`. Missing markers (auth/mode/vector mismatch), HTTP errors, network errors and decrypt errors become failures (never exceptions).
+  - `connect()` = `run(shell, "id")` probe.
+- `shellshock/cli.py`: added `shock manage` with a nested `connect` action (`--url`, `--vector`, `--mode`, `--secret`, `--name` (reserved for the registry), `--command` default `id`, `--timeout`). Success prints the output (exit 0), failure prints `connect failed: ...` (exit 1), usage/validation errors exit 2.
+- Tests: new `tests/test_manager_client.py` with a local `http.server` webshell emulator that decodes URL encoding, verifies the sha256 credential, decrypts encrypted payloads and returns framed output. Covers all 9 vector x mode combinations with a command containing spaces/`;`/`%`/`+`, non-ASCII secrets, wrong secret, missing secret, unreachable host and HTTP 500; plus CLI success/failure/usage tests.
+
+Also fixed along the way:
+- `shellshock/creator/spec.py`: the "plain can't have a secret" check used `self.mode in ("plain")` (a string, so a substring test); corrected to `self.mode == "plain"` with a clearer message.
+- `tests/test_creator.py`: loops that build a `plain` spec no longer pass a secret (plain now rejects one); added `test_plain_rejects_secret`.
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 64 tests, all OK.
+- `shellsuite shock manage --help` lists `connect`; `... connect --help` shows the expected arguments.
+
+Notes:
+- `connect` does not touch the registry yet (by design); `--name` is accepted for when the registry lands. There is no registry/CRUD/session/terminal yet.
+- `validate()` requires a secret for auth/encrypted; plain shells must not be given one (matching the Creator's spec rule).

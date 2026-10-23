@@ -35,6 +35,10 @@ class SpecTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             WebShellSpec(vector="cookie", mode="auth").validate()
 
+    def test_plain_rejects_secret(self):
+        with self.assertRaises(ValueError):
+            WebShellSpec(vector="cookie", mode="plain", secret="x").validate()
+
     def test_default_driver_is_first(self):
         spec = WebShellSpec(vector="cookie", mode="plain")
         self.assertEqual(spec.resolved_driver, drivers.DEFAULT_DRIVER)
@@ -90,7 +94,11 @@ class GeneratorTests(unittest.TestCase):
         for vector in contract.VECTORS:
             for mode in ("plain", "auth", "encrypted"):
                 php = generator.generate(
-                    WebShellSpec(vector=vector, mode=mode, secret="x")
+                    WebShellSpec(
+                        vector=vector,
+                        mode=mode,
+                        secret=None if mode == "plain" else "x",
+                    )
                 )
                 self.assertNotIn("??", php, (vector, mode))  # PHP 7.0+
                 self.assertIn("isset(", php, (vector, mode))
@@ -135,7 +143,11 @@ class GeneratorTests(unittest.TestCase):
     def test_non_encrypted_modes_have_no_crypto(self):
         for mode in ("plain", "auth"):
             php = generator.generate(
-                WebShellSpec(vector="cookie", mode=mode, secret="x")
+                WebShellSpec(
+                    vector="cookie",
+                    mode=mode,
+                    secret=None if mode == "plain" else "x",
+                )
             )
             self.assertNotIn("__ss_decrypt", php, mode)
             self.assertNotIn("__ss_encrypt", php, mode)
@@ -145,7 +157,11 @@ class GeneratorTests(unittest.TestCase):
         for vector in contract.VECTORS:
             for mode in ("plain", "auth", "encrypted"):
                 php = generator.generate(
-                    WebShellSpec(vector=vector, mode=mode, secret="x")
+                    WebShellSpec(
+                        vector=vector,
+                        mode=mode,
+                        secret=None if mode == "plain" else "x",
+                    )
                 )
                 self.assertIn("urldecode(", php, (vector, mode))
 
