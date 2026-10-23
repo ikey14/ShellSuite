@@ -114,7 +114,7 @@ def _cmd_manage_connect(args: argparse.Namespace) -> int:
         return 2
 
     if result.success:
-        sys.stdout.write(result.output)
+        sys.stdout.write(f"connect successful: {result.output}")
         if not result.output.endswith("\n"):
             sys.stdout.write("\n")
         return 0
