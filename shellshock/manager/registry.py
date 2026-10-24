@@ -245,6 +245,16 @@ class Registry:
                 return record
         raise RegistryError(f"no shell with id {shell_id!r}")
 
+    def touch(self, shell_id: str, now: str | None = None) -> ShellRecord:
+        """Mark the shell as used now (updates ``last_used`` only)."""
+        now = now or _now_iso()
+        for index, record in enumerate(self.shells):
+            if record.id == shell_id:
+                updated = replace(record, last_used=now)
+                self.shells[index] = updated
+                return updated
+        raise RegistryError(f"no shell with id {shell_id!r}")
+
     def query(
         self,
         *,

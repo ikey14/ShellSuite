@@ -371,6 +371,20 @@ class ManagerRegistryCliTests(_ServerTest):
         store.save()
         return record
 
+    def _seed_shell(self, url, vector, mode, has_secret, name="web1"):
+        store = registry.Registry()
+        store.load()
+        record = store.upsert(
+            url=url,
+            vector=vector,
+            mode=mode,
+            has_secret=has_secret,
+            name=name,
+            now="2026-01-01T00:00:00+00:00",
+        )
+        store.save()
+        return record
+
     def test_edit_changes_name(self):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
@@ -458,6 +472,71 @@ class ManagerRegistryCliTests(_ServerTest):
                 )
                 self.assertEqual(rc, 1)
                 self.assertIn("no shell with id", err)
+
+    def test_terminal_runs_commands_until_exit(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server), "post", "plain", False)
+                out, err = io.StringIO(), io.StringIO()
+                with mock.patch("sys.stdin", io.StringIO("id\nexit\n")):
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        rc = cli.main(["shock", "manage", "terminal", record.id])
+                self.assertEqual(rc, 0, err.getvalue())
+                self.assertIn("ran:id", out.getvalue())
+
+    def test_terminal_json_mode(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server), "cookie", "plain", False)
+                out, err = io.StringIO(), io.StringIO()
+                with mock.patch("sys.stdin", io.StringIO("id\nexit\n")):
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        rc = cli.main(
+                            ["shock", "manage", "terminal", record.id, "--json"]
+                        )
+                self.assertEqual(rc, 0, err.getvalue())
+                events = [json.loads(line) for line in out.getvalue().splitlines()]
+                self.assertEqual(len(events), 1)
+                self.assertEqual(events[0]["command"], "id")
+                self.assertTrue(events[0]["success"])
+                self.assertIn("ran:id", events[0]["output"])
+
+    def test_terminal_missing_secret_returns_2(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server), "post", "auth", True)
+                err = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                    rc = cli.main(["shock", "manage", "terminal", record.id])
+                self.assertEqual(rc, 2)
+                self.assertIn("requires --secret", err.getvalue())
+
+    def test_terminal_wrong_secret_exits_1(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server), "post", "auth", True)
+                out, err = io.StringIO(), io.StringIO()
+                with mock.patch("sys.stdin", io.StringIO("id\nexit\n")):
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        rc = cli.main(
+                            ["shock", "manage", "terminal", record.id,
+                             "--secret", "wrong"]
+                        )
+                self.assertEqual(rc, 1)
+                self.assertIn("error:", err.getvalue())
+
+    def test_terminal_unknown_id_returns_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                err = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                    rc = cli.main(["shock", "manage", "terminal", "missing"])
+                self.assertEqual(rc, 1)
+                self.assertIn("no shell with id", err.getvalue())
 
 
 if __name__ == "__main__":

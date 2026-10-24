@@ -15,7 +15,7 @@ from shellshock.creator.spec import WebShellSpec
 #For some reason this won't work with just "creator", it has to be ".creator".
 from .creator import drivers
 from . import uploader
-from .manager import client, registry
+from .manager import client, registry, terminal
 
 # The word the user types after `shellsuite` (the package is still `shellshock`).
 COMMAND = "shock"
@@ -227,6 +227,62 @@ def _cmd_manage_delete(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_manage_terminal(args: argparse.Namespace) -> int:
+    try:
+        store = registry.Registry()
+        store.load()
+    except registry.RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    record = store.get(args.id)
+    if record is None:
+        print(f"error: no shell with id {args.id!r}", file=sys.stderr)
+        return 1
+
+    if record.has_secret and not args.secret:
+        print("error: this shell requires --secret", file=sys.stderr)
+        return 2
+
+    try:
+        store.touch(record.id)
+        store.save()
+    except (registry.RegistryError, OSError) as exc:
+        print(f"warning: could not update last_used: {exc}", file=sys.stderr)
+
+    shell = client.WebShell(
+        url=record.url,
+        vector=record.vector,
+        mode=record.mode,
+        secret=args.secret if record.has_secret else None,
+        name=record.name or record.url,
+    )
+
+    if args.json:
+        def read_line(_prompt: str) -> str | None:
+            line = sys.stdin.readline()
+            return None if line == "" else line
+    else:
+        def read_line(prompt: str) -> str | None:
+            try:
+                return input(prompt)
+            except EOFError:
+                return None
+
+    try:
+        return terminal.interact(
+            shell,
+            read_line=read_line,
+            write=sys.stdout.write,
+            write_err=sys.stderr.write,
+            timeout=args.timeout,
+            json_mode=args.json,
+        )
+    except KeyboardInterrupt:
+        sys.stdout.write("\n")
+        return 130
+
+
 def register_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(COMMAND, help="webshell creation and management")
     actions = parser.add_subparsers(dest="action", metavar="<action>")
@@ -320,3 +376,20 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
     delete = manage_actions.add_parser("delete", help="delete a known webshell")
     delete.add_argument("id", help="shell id (see 'manage list')")
     delete.set_defaults(handler=_cmd_manage_delete)
+
+    terminal_cmd = manage_actions.add_parser(
+        "terminal", help="interactive terminal for a known webshell"
+    )
+    terminal_cmd.add_argument("id", help="shell id (see 'manage list')")
+    terminal_cmd.add_argument(
+        "--secret",
+        default=None,
+        help="password (required for shells that use auth/encryption)",
+    )
+    terminal_cmd.add_argument(
+        "--timeout", type=float, default=15.0, help="per-command timeout in seconds"
+    )
+    terminal_cmd.add_argument(
+        "--json", action="store_true", help="line-delimited JSON output (for the GUI)"
+    )
+    terminal_cmd.set_defaults(handler=_cmd_manage_terminal)

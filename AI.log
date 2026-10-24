@@ -328,3 +328,31 @@ What was tested:
 Notes:
 - This is a CLI-surface fix only; the registry already stored null correctly.
 - For bash/cmd, `--name ""` continues to work as before.
+
+
+[2026-10-24 13:22] Task: interactive terminal (objective 2.4).
+
+What was done:
+- `shellshock/manager/registry.py`: added `touch(id)`, which updates only `last_used` (raises `RegistryError` for an unknown id).
+- Added `shellshock/manager/terminal.py`:
+  - `interact(shell, read_line, write, write_err, run_command=client.run, timeout=15, json_mode=False, on_event=None)`.
+  - Reads a line, skips empty lines, exits on `exit`/`quit` (case-insensitive) or EOF, sends the command, prints the output (adds a newline only when missing), and exits with code 1 on the first command error.
+  - `--json` mode emits one JSON object per command (`command`, `success`, `output`, `error`) with no prompts, for the GUI.
+  - `on_event` hook fires per command; this is the seam for objective 2.5 session logging.
+- `shellshock/cli.py`: added `shock manage terminal <id> [--secret S] [--timeout N] [--json]`.
+  - Loads the shell by id (unknown id -> exit 1, corrupt registry -> exit 1).
+  - Requires `--secret` when the record has `has_secret` (both interactive and JSON; no getpass prompt) -> exit 2 if missing.
+  - Updates `last_used` via `touch()` at startup (warns and continues if the write fails).
+  - `KeyboardInterrupt` -> newline + exit 130.
+
+What was tested:
+- New `tests/test_terminal.py` (9 tests): commands until exit, quit, case-insensitive exit, empty-line skip, EOF, error -> 1, newline normalization, JSON objects, JSON error, `on_event`.
+- Extended `tests/test_manager_client.py` (5 tests): terminal plain shell over the emulator, `--json`, missing secret -> 2, wrong secret -> 1, unknown id -> 1.
+- `python -m unittest discover -s tests -v` -> 114 tests, all OK.
+- `shellsuite shock manage terminal --help` shows the expected arguments.
+
+Notes:
+- The terminal is stateless per command (each command is a separate HTTP request), so `cd`/env/jobs do not persist; documented in the module docstring.
+- Ctrl-C aborts only the local request; the remote command may keep running.
+- Session transcripts/timestamps are not written yet; `on_event` will be used by objective 2.5.
+- Remaining objectives: 2.5 sessions, 2.1 GUI.
