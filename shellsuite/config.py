@@ -42,3 +42,14 @@ def shells_dir() -> Path:
     directory = data_dir() / "shells"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+
+def sessions_dir() -> Path:
+    """Directory holding per-session terminal transcripts."""
+    directory = data_dir() / "sessions"
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700)
+    except OSError:
+        pass
+    return directory

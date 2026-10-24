@@ -356,3 +356,33 @@ Notes:
 - Ctrl-C aborts only the local request; the remote command may keep running.
 - Session transcripts/timestamps are not written yet; `on_event` will be used by objective 2.5.
 - Remaining objectives: 2.5 sessions, 2.1 GUI.
+
+
+[2026-10-24 18:54] Task: session recording and history (objective 2.5).
+
+What was done:
+- `shellsuite/config.py`: added `sessions_dir()` (`~/.shellsuite/sessions`, chmod 0700 best-effort).
+- Added `shellshock/manager/filters.py`: shared `parse()`/`matches()` for `==`, `!=`, `contains`; `registry.py` now delegates to it (behavior unchanged).
+- Added `shellshock/manager/sessions.py`:
+  - Append-only JSONL per session: metadata line, one command line per command, final `end` line. No per-command timestamps; session-level `started_at`/`ended_at`/`duration_seconds`.
+  - `SessionRecorder.start/record/finish` (4 MB cap; on overflow writes a `truncated` line once and stops logging; logging is best-effort and never breaks the terminal).
+  - Sessions are read-only once closed; no resume.
+  - Shell names are resolved live from the registry by `shell_id` (renames are reflected); if the shell was deleted, the stored URL is used.
+  - `list_sessions(shell_id=None, order, descending, filters_expr)` (all sessions, or one shell), `show_session(id)`, `delete_session(id)`, `check_query()`.
+  - Statuses: completed/error/interrupted/incomplete (no end line).
+  - Tolerates a torn trailing JSONL line.
+- `shellshock/cli.py`:
+  - Grouped the management commands: `manage list shells|sessions`, `manage show shell|session`, `manage edit shell`, `manage delete shell|session`.
+  - `list sessions` supports `--id <shell-id>`, ordering (`started_at` default, date fields descending), filters and `--json`; it lists sessions of all shells unless `--id` is given.
+  - `show shell --id` and `show session --id` (human + `--json`).
+  - `manage terminal` now creates a session at start, records commands through `on_event`, finalizes in a `finally` (0 completed / 1 error / 130 interrupted), and in `--json` mode first emits `{"event":"session","id":…,"shell_id":…,"shell":…}` (id null if logging failed).
+  - Session block title uses an ASCII hyphen separator (avoid mojibake in Windows consoles).
+- Tests: new `tests/test_sessions.py` (recorder, cap, incomplete, name resolution/rename/fallback, list/filter/order, show/delete, torn line, unwritable dir); `tests/test_manager_client.py` updated for the grouped CLI and gained session CLI tests (record+list, show, JSON start event, rename tracking, delete-shell keeps sessions, delete session).
+
+What was tested:
+- `python -m unittest discover -s tests` -> 134 tests, all OK.
+- Manual smoke: seeded a registry + session, then `manage list shells`, `manage list sessions`, `manage show session`, `manage show shell --json`, `manage list sessions --json`.
+
+Notes:
+- Objective 2.5 is done. Only the GUI (2.1) remains.
+- Sessions survive restarts (files on disk); deleting a shell keeps its sessions; the secret is never stored.

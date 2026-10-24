@@ -18,6 +18,8 @@ from pathlib import Path
 
 from shellsuite import config
 
+from . import filters
+
 REGISTRY_VERSION = 1
 
 ORDER_FIELDS: tuple[str, ...] = (
@@ -30,7 +32,7 @@ ORDER_FIELDS: tuple[str, ...] = (
     "last_used",
 )
 DATE_FIELDS: tuple[str, ...] = ("created_at", "last_used")
-FILTER_OPS: tuple[str, ...] = ("==", "!=", "contains")
+FILTER_OPS: tuple[str, ...] = filters.FILTER_OPS
 
 # Attributes a user may change with `manage edit`. Identity/derived fields
 # (id, url, vector, mode, has_secret, timestamps) are not editable.
@@ -100,27 +102,15 @@ def _sort_key(record: ShellRecord, field: str) -> str:
 
 def parse_filter(expression: str) -> tuple[str, str, str]:
     """Parse ``"attr op value"`` into ``(attr, op, value)``."""
-    parts = expression.split(None, 2)
-    if len(parts) != 3:
-        raise RegistryError(
-            f"invalid --filter: {expression!r} (expected 'attr op value')"
-        )
-    attr, op, value = parts
-    if attr not in ORDER_FIELDS:
-        raise RegistryError(f"invalid --filter attribute: {attr!r}")
-    if op not in FILTER_OPS:
-        raise RegistryError(f"invalid --filter operator: {op!r} (use ==, !=, contains)")
-    return attr, op, value
+    try:
+        return filters.parse(expression, ORDER_FIELDS)
+    except filters.FilterError as exc:
+        raise RegistryError(str(exc)) from exc
 
 
 def _matches(record: ShellRecord, flt: tuple[str, str, str]) -> bool:
     attr, op, value = flt
-    actual = _field_value(record, attr)
-    if op == "contains":
-        return value.lower() in actual.lower()
-    if op == "==":
-        return actual == value
-    return actual != value
+    return filters.matches(_field_value(record, attr), op, value)
 
 
 class Registry:

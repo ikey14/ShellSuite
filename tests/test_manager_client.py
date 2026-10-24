@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from shellshock.manager import client, registry
+from shellshock.manager import client, registry, sessions
 from shellsuite import cli, crypto
 from shellsuite.protocol import contract, encoding
 
@@ -298,12 +298,12 @@ class ManagerRegistryCliTests(_ServerTest):
                 )
                 self.assertEqual(rc, 0, err)
 
-                rc, out, err = self._run(["shock", "manage", "list"])
+                rc, out, err = self._run(["shock", "manage", "list", "shells"])
                 self.assertEqual(rc, 0, err)
                 self.assertIn("== web1 ==", out)
                 self.assertIn(_url(server), out)
 
-                rc, out, err = self._run(["shock", "manage", "list", "--json"])
+                rc, out, err = self._run(["shock", "manage", "list", "shells", "--json"])
                 self.assertEqual(rc, 0, err)
                 data = json.loads(out)
                 self.assertEqual(data["version"], registry.REGISTRY_VERSION)
@@ -312,7 +312,7 @@ class ManagerRegistryCliTests(_ServerTest):
     def test_list_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
-                rc, out, err = self._run(["shock", "manage", "list"])
+                rc, out, err = self._run(["shock", "manage", "list", "shells"])
                 self.assertEqual(rc, 0, err)
                 self.assertIn("no shells registered", out)
 
@@ -334,7 +334,7 @@ class ManagerRegistryCliTests(_ServerTest):
                 store.save()
 
                 rc, out, err = self._run(
-                    ["shock", "manage", "list", "--filter", "has_secret == true"]
+                    ["shock", "manage", "list", "shells", "--filter", "has_secret == true"]
                 )
                 self.assertEqual(rc, 0, err)
                 self.assertIn("== beta ==", out)
@@ -344,7 +344,7 @@ class ManagerRegistryCliTests(_ServerTest):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 rc, _out, err = self._run(
-                    ["shock", "manage", "list", "--filter", "bogus"]
+                    ["shock", "manage", "list", "shells", "--filter", "bogus"]
                 )
                 self.assertEqual(rc, 2)
                 self.assertIn("invalid --filter", err)
@@ -353,7 +353,7 @@ class ManagerRegistryCliTests(_ServerTest):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 (Path(tmp) / "registry.json").write_text("{nope", encoding="utf-8")
-                rc, _out, err = self._run(["shock", "manage", "list"])
+                rc, _out, err = self._run(["shock", "manage", "list", "shells"])
                 self.assertEqual(rc, 1)
                 self.assertIn("cannot read registry", err)
 
@@ -390,7 +390,7 @@ class ManagerRegistryCliTests(_ServerTest):
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 record = self._seed()
                 rc, out, err = self._run(
-                    ["shock", "manage", "edit", record.id, "--name", "Renamed"]
+                    ["shock", "manage", "edit", "shell", record.id, "--name", "Renamed"]
                 )
                 self.assertEqual(rc, 0, err)
                 self.assertIn("updated", out)
@@ -403,7 +403,7 @@ class ManagerRegistryCliTests(_ServerTest):
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 record = self._seed()
                 rc, _out, err = self._run(
-                    ["shock", "manage", "edit", record.id, "--name", ""]
+                    ["shock", "manage", "edit", "shell", record.id, "--name", ""]
                 )
                 self.assertEqual(rc, 0, err)
                 store = registry.Registry()
@@ -415,7 +415,7 @@ class ManagerRegistryCliTests(_ServerTest):
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 record = self._seed()
                 rc, _out, err = self._run(
-                    ["shock", "manage", "edit", record.id, "--clear-name"]
+                    ["shock", "manage", "edit", "shell", record.id, "--clear-name"]
                 )
                 self.assertEqual(rc, 0, err)
                 store = registry.Registry()
@@ -429,7 +429,7 @@ class ManagerRegistryCliTests(_ServerTest):
                 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                     with self.assertRaises(SystemExit) as caught:
                         cli.main(
-                            ["shock", "manage", "edit", record.id,
+                            ["shock", "manage", "edit", "shell", record.id,
                              "--name", "x", "--clear-name"]
                         )
                 self.assertNotEqual(caught.exception.code, 0)
@@ -438,7 +438,7 @@ class ManagerRegistryCliTests(_ServerTest):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 record = self._seed()
-                rc, _out, err = self._run(["shock", "manage", "edit", record.id])
+                rc, _out, err = self._run(["shock", "manage", "edit", "shell", record.id])
                 self.assertEqual(rc, 2)
                 self.assertIn("nothing to edit", err)
 
@@ -446,7 +446,7 @@ class ManagerRegistryCliTests(_ServerTest):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 rc, _out, err = self._run(
-                    ["shock", "manage", "edit", "missing", "--name", "x"]
+                    ["shock", "manage", "edit", "shell", "missing", "--name", "x"]
                 )
                 self.assertEqual(rc, 1)
                 self.assertIn("no shell with id", err)
@@ -456,7 +456,7 @@ class ManagerRegistryCliTests(_ServerTest):
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 record = self._seed()
                 rc, out, err = self._run(
-                    ["shock", "manage", "delete", record.id]
+                    ["shock", "manage", "delete", "shell", record.id]
                 )
                 self.assertEqual(rc, 0, err)
                 self.assertIn("deleted", out)
@@ -468,7 +468,7 @@ class ManagerRegistryCliTests(_ServerTest):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
                 rc, _out, err = self._run(
-                    ["shock", "manage", "delete", "missing"]
+                    ["shock", "manage", "delete", "shell", "missing"]
                 )
                 self.assertEqual(rc, 1)
                 self.assertIn("no shell with id", err)
@@ -498,10 +498,11 @@ class ManagerRegistryCliTests(_ServerTest):
                         )
                 self.assertEqual(rc, 0, err.getvalue())
                 events = [json.loads(line) for line in out.getvalue().splitlines()]
-                self.assertEqual(len(events), 1)
-                self.assertEqual(events[0]["command"], "id")
-                self.assertTrue(events[0]["success"])
-                self.assertIn("ran:id", events[0]["output"])
+                self.assertEqual(events[0]["event"], "session")
+                self.assertEqual(len(events), 2)
+                self.assertEqual(events[1]["command"], "id")
+                self.assertTrue(events[1]["success"])
+                self.assertIn("ran:id", events[1]["output"])
 
     def test_terminal_missing_secret_returns_2(self):
         server = self.start_shell("hunter2")
@@ -537,6 +538,146 @@ class ManagerRegistryCliTests(_ServerTest):
                     rc = cli.main(["shock", "manage", "terminal", "missing"])
                 self.assertEqual(rc, 1)
                 self.assertIn("no shell with id", err.getvalue())
+
+
+class ManagerSessionCliTests(_ServerTest):
+    def _run(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = cli.main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def _seed_shell(self, url, vector="post", mode="plain", has_secret=False, name="web1"):
+        store = registry.Registry()
+        store.load()
+        record = store.upsert(
+            url=url, vector=vector, mode=mode, has_secret=has_secret,
+            name=name, now="2026-01-01T00:00:00+00:00",
+        )
+        store.save()
+        return record
+
+    def _terminal(self, record, lines, extra=()):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(lines)):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = cli.main(["shock", "manage", "terminal", record.id, *extra])
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_terminal_records_session_and_lists(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server))
+                rc, _out, err = self._terminal(record, "id\nexit\n")
+                self.assertEqual(rc, 0, err)
+
+                summaries = sessions.list_sessions()
+                self.assertEqual(len(summaries), 1)
+                self.assertEqual(summaries[0].status, sessions.STATUS_COMPLETED)
+                self.assertEqual(summaries[0].commands, 1)
+                self.assertEqual(summaries[0].shell, "web1")
+
+                rc, out, err = self._run(["shock", "manage", "list", "sessions"])
+                self.assertEqual(rc, 0, err)
+                self.assertIn(summaries[0].id, out)
+
+                rc, out, err = self._run(
+                    ["shock", "manage", "list", "sessions", "--json"]
+                )
+                self.assertEqual(rc, 0, err)
+                data = json.loads(out)
+                self.assertEqual(data["sessions"][0]["shell"], "web1")
+
+                rc, out, err = self._run(
+                    ["shock", "manage", "list", "sessions", "--id", record.id]
+                )
+                self.assertEqual(rc, 0, err)
+                self.assertIn(summaries[0].id, out)
+
+    def test_show_session_and_shell(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server))
+                self._terminal(record, "id\nexit\n")
+                session_id = sessions.list_sessions()[0].id
+
+                rc, out, err = self._run(
+                    ["shock", "manage", "show", "session", "--id", session_id]
+                )
+                self.assertEqual(rc, 0, err)
+                self.assertIn("$ id", out)
+                self.assertIn("ran:id", out)
+
+                rc, out, err = self._run(
+                    ["shock", "manage", "show", "session", "--id", session_id, "--json"]
+                )
+                self.assertEqual(rc, 0, err)
+                data = json.loads(out)
+                self.assertEqual(data["session"]["id"], session_id)
+
+                rc, out, err = self._run(
+                    ["shock", "manage", "show", "shell", "--id", record.id]
+                )
+                self.assertEqual(rc, 0, err)
+                self.assertIn("== web1 ==", out)
+
+                rc, out, err = self._run(
+                    ["shock", "manage", "show", "shell", "--id", record.id, "--json"]
+                )
+                self.assertEqual(rc, 0, err)
+                self.assertEqual(json.loads(out)["shell"]["id"], record.id)
+
+    def test_terminal_json_start_event(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server))
+                rc, out, err = self._terminal(record, "id\nexit\n", extra=("--json",))
+                self.assertEqual(rc, 0, err)
+                lines = [json.loads(line) for line in out.splitlines()]
+                self.assertEqual(lines[0]["event"], "session")
+                self.assertIsNotNone(lines[0]["id"])
+                self.assertEqual(lines[1]["command"], "id")
+                self.assertTrue(lines[1]["success"])
+
+    def test_session_name_tracks_rename(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server), name="before")
+                self._terminal(record, "id\nexit\n")
+                rc, _out, err = self._run(
+                    ["shock", "manage", "edit", "shell", record.id, "--name", "after"]
+                )
+                self.assertEqual(rc, 0, err)
+                rc, out, err = self._run(["shock", "manage", "list", "sessions"])
+                self.assertEqual(rc, 0, err)
+                self.assertIn("== after", out)
+                self.assertNotIn("== before", out)
+
+    def test_delete_shell_keeps_sessions_and_delete_session(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server), name="web1")
+                self._terminal(record, "id\nexit\n")
+
+                rc, _out, err = self._run(
+                    ["shock", "manage", "delete", "shell", record.id]
+                )
+                self.assertEqual(rc, 0, err)
+
+                summaries = sessions.list_sessions()
+                self.assertEqual(len(summaries), 1)
+                self.assertEqual(summaries[0].shell, _url(server))
+
+                rc, _out, err = self._run(
+                    ["shock", "manage", "delete", "session", "--id", summaries[0].id]
+                )
+                self.assertEqual(rc, 0, err)
+                self.assertEqual(sessions.list_sessions(), [])
 
 
 if __name__ == "__main__":

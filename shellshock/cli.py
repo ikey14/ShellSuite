@@ -15,7 +15,7 @@ from shellshock.creator.spec import WebShellSpec
 #For some reason this won't work with just "creator", it has to be ".creator".
 from .creator import drivers
 from . import uploader
-from .manager import client, registry, terminal
+from .manager import client, registry, sessions, terminal
 
 # The word the user types after `shellsuite` (the package is still `shellshock`).
 COMMAND = "shock"
@@ -138,7 +138,38 @@ def _cmd_manage_connect(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_manage_list(args: argparse.Namespace) -> int:
+def _format_shell_block(record: registry.ShellRecord) -> str:
+    title = record.name or record.url
+    return (
+        f"== {title} ==\n"
+        f"id:         {record.id}\n"
+        f"url:        {record.url}\n"
+        f"vector:     {record.vector}\n"
+        f"mode:       {record.mode}\n"
+        f"has_secret: {'yes' if record.has_secret else 'no'}\n"
+        f"created:    {record.created_at}\n"
+        f"last_used:  {record.last_used}"
+    )
+
+
+def _format_session_block(summary: sessions.SessionSummary) -> str:
+    duration = f"{summary.duration}s" if summary.duration is not None else "-"
+    return (
+        f"== {summary.shell} - {summary.started_at} ==\n"
+        f"session:   {summary.id}\n"
+        f"shell_id:  {summary.shell_id}\n"
+        f"url:       {summary.url}\n"
+        f"vector:    {summary.vector}\n"
+        f"mode:      {summary.mode}\n"
+        f"status:    {summary.status}\n"
+        f"started:   {summary.started_at}\n"
+        f"ended:     {summary.ended_at or '-'}\n"
+        f"duration:  {duration}\n"
+        f"commands:  {summary.commands}"
+    )
+
+
+def _cmd_manage_list_shells(args: argparse.Namespace) -> int:
     try:
         store = registry.Registry()
         store.load()
@@ -173,24 +204,106 @@ def _cmd_manage_list(args: argparse.Namespace) -> int:
         print("no shells registered")
         return 0
 
-    blocks = []
-    for record in records:
-        title = record.name or record.url
-        blocks.append(
-            f"== {title} ==\n"
-            f"id:         {record.id}\n"
-            f"url:        {record.url}\n"
-            f"vector:     {record.vector}\n"
-            f"mode:       {record.mode}\n"
-            f"has_secret: {'yes' if record.has_secret else 'no'}\n"
-            f"created:    {record.created_at}\n"
-            f"last_used:  {record.last_used}"
-        )
-    print("\n\n".join(blocks))
+    print("\n\n".join(_format_shell_block(record) for record in records))
     return 0
 
 
-def _cmd_manage_edit(args: argparse.Namespace) -> int:
+def _cmd_manage_list_sessions(args: argparse.Namespace) -> int:
+    if args.asc:
+        descending = False
+    elif args.desc:
+        descending = True
+    else:
+        descending = args.order in sessions.SESSION_DATE_FIELDS
+
+    try:
+        sessions.check_query(args.order, tuple(args.filter))
+    except sessions.SessionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        summaries = sessions.list_sessions(
+            shell_id=args.id,
+            order=args.order,
+            descending=descending,
+            filters_expr=tuple(args.filter),
+        )
+    except sessions.SessionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        payload = {
+            "version": sessions.SESSION_VERSION,
+            "sessions": [summary.to_dict() for summary in summaries],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    if not summaries:
+        print("no sessions recorded")
+        return 0
+
+    print("\n\n".join(_format_session_block(summary) for summary in summaries))
+    return 0
+
+
+def _cmd_manage_show_shell(args: argparse.Namespace) -> int:
+    try:
+        store = registry.Registry()
+        store.load()
+    except registry.RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    record = store.get(args.id)
+    if record is None:
+        print(f"error: no shell with id {args.id!r}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        payload = {"version": registry.REGISTRY_VERSION, "shell": record.to_dict()}
+        print(json.dumps(payload, indent=2))
+    else:
+        print(_format_shell_block(record))
+    return 0
+
+
+def _cmd_manage_show_session(args: argparse.Namespace) -> int:
+    try:
+        data = sessions.show_session(args.id)
+    except sessions.SessionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    summary = data["summary"]
+    if args.json:
+        payload = {
+            "version": sessions.SESSION_VERSION,
+            "session": summary.to_dict(),
+            "events": data["events"],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    print(_format_session_block(summary))
+    for event in data["events"]:
+        if event.get("type") == "truncated":
+            print("\n[transcript truncated]")
+            continue
+        print(f"\n$ {event.get('command')}")
+        if event.get("success"):
+            output = event.get("output") or ""
+            sys.stdout.write(output)
+            if output and not output.endswith("\n"):
+                sys.stdout.write("\n")
+        else:
+            print(f"error: {event.get('error')}")
+    return 0
+
+
+def _cmd_manage_edit_shell(args: argparse.Namespace) -> int:
     changes: dict[str, str | None] = {}
     if args.clear_name:
         changes["name"] = None
@@ -213,7 +326,7 @@ def _cmd_manage_edit(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_manage_delete(args: argparse.Namespace) -> int:
+def _cmd_manage_delete_shell(args: argparse.Namespace) -> int:
     try:
         store = registry.Registry()
         store.load()
@@ -224,6 +337,17 @@ def _cmd_manage_delete(args: argparse.Namespace) -> int:
         return 1
 
     print(f"deleted {record.name or record.url} ({record.id})")
+    return 0
+
+
+def _cmd_manage_delete_session(args: argparse.Namespace) -> int:
+    try:
+        summary = sessions.delete_session(args.id)
+    except sessions.SessionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"deleted session {summary.id} ({summary.shell})")
     return 0
 
 
@@ -250,6 +374,12 @@ def _cmd_manage_terminal(args: argparse.Namespace) -> int:
     except (registry.RegistryError, OSError) as exc:
         print(f"warning: could not update last_used: {exc}", file=sys.stderr)
 
+    try:
+        recorder = sessions.SessionRecorder.start(record)
+    except sessions.SessionError as exc:
+        recorder = None
+        print(f"warning: session will not be logged: {exc}", file=sys.stderr)
+
     shell = client.WebShell(
         url=record.url,
         vector=record.vector,
@@ -262,6 +392,18 @@ def _cmd_manage_terminal(args: argparse.Namespace) -> int:
         def read_line(_prompt: str) -> str | None:
             line = sys.stdin.readline()
             return None if line == "" else line
+
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "event": "session",
+                    "id": recorder.id if recorder is not None else None,
+                    "shell_id": record.id,
+                    "shell": record.name or record.url,
+                }
+            )
+            + "\n"
+        )
     else:
         def read_line(prompt: str) -> str | None:
             try:
@@ -269,18 +411,35 @@ def _cmd_manage_terminal(args: argparse.Namespace) -> int:
             except EOFError:
                 return None
 
+    status = sessions.STATUS_COMPLETED
     try:
-        return terminal.interact(
+        rc = terminal.interact(
             shell,
             read_line=read_line,
             write=sys.stdout.write,
             write_err=sys.stderr.write,
             timeout=args.timeout,
             json_mode=args.json,
+            on_event=recorder.record if recorder is not None else None,
         )
     except KeyboardInterrupt:
         sys.stdout.write("\n")
-        return 130
+        rc = 130
+        status = sessions.STATUS_INTERRUPTED
+    except Exception:
+        status = sessions.STATUS_ERROR
+        raise
+    else:
+        status = {
+            0: sessions.STATUS_COMPLETED,
+            1: sessions.STATUS_ERROR,
+            130: sessions.STATUS_INTERRUPTED,
+        }.get(rc, sessions.STATUS_COMPLETED)
+    finally:
+        if recorder is not None:
+            recorder.finish(status)
+
+    return rc
 
 
 def register_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -339,48 +498,96 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     connect.set_defaults(handler=_cmd_manage_connect)
 
-    list_cmd = manage_actions.add_parser("list", help="list known webshells")
-    list_cmd.add_argument(
+    list_cmd = manage_actions.add_parser("list", help="list shells or sessions")
+    list_actions = list_cmd.add_subparsers(dest="list_kind", metavar="<kind>")
+
+    shells_cmd = list_actions.add_parser("shells", help="list known webshells")
+    shells_cmd.add_argument(
         "--order",
         choices=registry.ORDER_FIELDS,
         default="last_used",
         help="sort field (default: last_used)",
     )
-    direction = list_cmd.add_mutually_exclusive_group()
-    direction.add_argument("--asc", action="store_true", help="ascending order")
-    direction.add_argument("--desc", action="store_true", help="descending order")
-    list_cmd.add_argument(
+    shells_direction = shells_cmd.add_mutually_exclusive_group()
+    shells_direction.add_argument("--asc", action="store_true", help="ascending order")
+    shells_direction.add_argument("--desc", action="store_true", help="descending order")
+    shells_cmd.add_argument(
         "--filter",
         action="append",
         default=[],
         help="filter 'attr op value' (repeatable, ANDed)",
     )
-    list_cmd.add_argument("--json", action="store_true", help="machine-readable JSON")
-    list_cmd.set_defaults(handler=_cmd_manage_list)
+    shells_cmd.add_argument("--json", action="store_true", help="machine-readable JSON")
+    shells_cmd.set_defaults(handler=_cmd_manage_list_shells)
 
-    edit = manage_actions.add_parser("edit", help="edit a known webshell")
-    edit.add_argument("id", help="shell id (see 'manage list')")
-    name_group = edit.add_mutually_exclusive_group()
-    name_group.add_argument(
+    sessions_cmd = list_actions.add_parser("sessions", help="list recorded sessions")
+    sessions_cmd.add_argument(
+        "--id", default=None, help="only sessions of this shell id"
+    )
+    sessions_cmd.add_argument(
+        "--order",
+        choices=sessions.SESSION_FIELDS,
+        default="started_at",
+        help="sort field (default: started_at)",
+    )
+    sessions_direction = sessions_cmd.add_mutually_exclusive_group()
+    sessions_direction.add_argument("--asc", action="store_true", help="ascending order")
+    sessions_direction.add_argument("--desc", action="store_true", help="descending order")
+    sessions_cmd.add_argument(
+        "--filter",
+        action="append",
+        default=[],
+        help="filter 'attr op value' (repeatable, ANDed)",
+    )
+    sessions_cmd.add_argument("--json", action="store_true", help="machine-readable JSON")
+    sessions_cmd.set_defaults(handler=_cmd_manage_list_sessions)
+
+    show_cmd = manage_actions.add_parser("show", help="show one shell or session")
+    show_actions = show_cmd.add_subparsers(dest="show_kind", metavar="<kind>")
+
+    show_shell = show_actions.add_parser("shell", help="show one webshell")
+    show_shell.add_argument("--id", required=True, help="shell id")
+    show_shell.add_argument("--json", action="store_true", help="machine-readable JSON")
+    show_shell.set_defaults(handler=_cmd_manage_show_shell)
+
+    show_session = show_actions.add_parser("session", help="show one session transcript")
+    show_session.add_argument("--id", required=True, help="session id")
+    show_session.add_argument("--json", action="store_true", help="machine-readable JSON")
+    show_session.set_defaults(handler=_cmd_manage_show_session)
+
+    edit_cmd = manage_actions.add_parser("edit", help="edit a known webshell")
+    edit_actions = edit_cmd.add_subparsers(dest="edit_kind", metavar="<kind>")
+
+    edit_shell = edit_actions.add_parser("shell", help="edit a webshell")
+    edit_shell.add_argument("id", help="shell id (see 'manage list shells')")
+    edit_name = edit_shell.add_mutually_exclusive_group()
+    edit_name.add_argument(
         "--name",
         default=None,
         help="new name (an empty string clears it in shells that pass empty args)",
     )
-    name_group.add_argument(
+    edit_name.add_argument(
         "--clear-name",
         action="store_true",
         help="remove the name (title falls back to the URL)",
     )
-    edit.set_defaults(handler=_cmd_manage_edit)
+    edit_shell.set_defaults(handler=_cmd_manage_edit_shell)
 
-    delete = manage_actions.add_parser("delete", help="delete a known webshell")
-    delete.add_argument("id", help="shell id (see 'manage list')")
-    delete.set_defaults(handler=_cmd_manage_delete)
+    delete_cmd = manage_actions.add_parser("delete", help="delete a shell or session")
+    delete_actions = delete_cmd.add_subparsers(dest="delete_kind", metavar="<kind>")
+
+    delete_shell = delete_actions.add_parser("shell", help="delete a webshell")
+    delete_shell.add_argument("id", help="shell id (see 'manage list shells')")
+    delete_shell.set_defaults(handler=_cmd_manage_delete_shell)
+
+    delete_session = delete_actions.add_parser("session", help="delete a session")
+    delete_session.add_argument("--id", required=True, help="session id")
+    delete_session.set_defaults(handler=_cmd_manage_delete_session)
 
     terminal_cmd = manage_actions.add_parser(
         "terminal", help="interactive terminal for a known webshell"
     )
-    terminal_cmd.add_argument("id", help="shell id (see 'manage list')")
+    terminal_cmd.add_argument("id", help="shell id (see 'manage list shells')")
     terminal_cmd.add_argument(
         "--secret",
         default=None,
