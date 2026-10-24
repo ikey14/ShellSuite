@@ -190,6 +190,43 @@ def _cmd_manage_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_manage_edit(args: argparse.Namespace) -> int:
+    changes: dict[str, str | None] = {}
+    if args.clear_name:
+        changes["name"] = None
+    elif args.name is not None:
+        changes["name"] = args.name if args.name != "" else None
+    if not changes:
+        print("error: nothing to edit (use --name or --clear-name)", file=sys.stderr)
+        return 2
+
+    try:
+        store = registry.Registry()
+        store.load()
+        record = store.update(args.id, changes)
+        store.save()
+    except registry.RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"updated {record.id}: name = {record.name!r}")
+    return 0
+
+
+def _cmd_manage_delete(args: argparse.Namespace) -> int:
+    try:
+        store = registry.Registry()
+        store.load()
+        record = store.delete(args.id)
+        store.save()
+    except registry.RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"deleted {record.name or record.url} ({record.id})")
+    return 0
+
+
 def register_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(COMMAND, help="webshell creation and management")
     actions = parser.add_subparsers(dest="action", metavar="<action>")
@@ -264,3 +301,22 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     list_cmd.add_argument("--json", action="store_true", help="machine-readable JSON")
     list_cmd.set_defaults(handler=_cmd_manage_list)
+
+    edit = manage_actions.add_parser("edit", help="edit a known webshell")
+    edit.add_argument("id", help="shell id (see 'manage list')")
+    name_group = edit.add_mutually_exclusive_group()
+    name_group.add_argument(
+        "--name",
+        default=None,
+        help="new name (an empty string clears it in shells that pass empty args)",
+    )
+    name_group.add_argument(
+        "--clear-name",
+        action="store_true",
+        help="remove the name (title falls back to the URL)",
+    )
+    edit.set_defaults(handler=_cmd_manage_edit)
+
+    delete = manage_actions.add_parser("delete", help="delete a known webshell")
+    delete.add_argument("id", help="shell id (see 'manage list')")
+    delete.set_defaults(handler=_cmd_manage_delete)

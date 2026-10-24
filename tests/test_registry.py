@@ -180,6 +180,68 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaises(registry.RegistryError):
             store.query(order="bogus")
 
+    def test_get(self):
+        store = self._registry()
+        self._seed(store)
+        record = store.all()[0]
+        self.assertEqual(store.get(record.id), record)
+        self.assertIsNone(store.get("missing"))
+
+    def test_update_name_preserves_timestamps(self):
+        store = self._registry()
+        self._seed(store)
+        record = store.all()[0]
+        updated = store.update(record.id, {"name": "Renamed"})
+        self.assertEqual(updated.name, "Renamed")
+        self.assertEqual(updated.id, record.id)
+        self.assertEqual(updated.created_at, record.created_at)
+        self.assertEqual(updated.last_used, record.last_used)
+
+    def test_update_clear_name(self):
+        store = self._registry()
+        self._seed(store)
+        record = store.all()[0]
+        updated = store.update(record.id, {"name": None})
+        self.assertIsNone(updated.name)
+
+    def test_update_rejects_unknown_field(self):
+        store = self._registry()
+        self._seed(store)
+        record = store.all()[0]
+        with self.assertRaises(registry.RegistryError):
+            store.update(record.id, {"url": "http://x"})
+
+    def test_update_not_found(self):
+        store = self._registry()
+        with self.assertRaises(registry.RegistryError):
+            store.update("missing", {"name": "x"})
+
+    def test_delete(self):
+        store = self._registry()
+        self._seed(store)
+        record = store.all()[0]
+        deleted = store.delete(record.id)
+        self.assertEqual(deleted.id, record.id)
+        self.assertIsNone(store.get(record.id))
+        self.assertEqual(len(store.all()), 2)
+
+    def test_delete_not_found(self):
+        store = self._registry()
+        with self.assertRaises(registry.RegistryError):
+            store.delete("missing")
+
+    def test_update_and_delete_round_trip(self):
+        store = self._registry()
+        self._seed(store)
+        store.update(store.all()[0].id, {"name": "Renamed"})
+        store.delete(store.all()[1].id)
+        store.save()
+
+        other = registry.Registry(self.path)
+        other.load()
+        self.assertEqual(len(other.all()), 2)
+        self.assertIn("Renamed", [record.name for record in other.all()])
+
 
 if __name__ == "__main__":
     unittest.main()

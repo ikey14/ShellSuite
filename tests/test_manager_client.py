@@ -357,6 +357,108 @@ class ManagerRegistryCliTests(_ServerTest):
                 self.assertEqual(rc, 1)
                 self.assertIn("cannot read registry", err)
 
+    def _seed(self):
+        store = registry.Registry()
+        store.load()
+        record = store.upsert(
+            url="http://x/a.php",
+            vector="post",
+            mode="plain",
+            has_secret=False,
+            name="Alpha",
+            now="2026-01-01T00:00:00+00:00",
+        )
+        store.save()
+        return record
+
+    def test_edit_changes_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed()
+                rc, out, err = self._run(
+                    ["shock", "manage", "edit", record.id, "--name", "Renamed"]
+                )
+                self.assertEqual(rc, 0, err)
+                self.assertIn("updated", out)
+                store = registry.Registry()
+                store.load()
+                self.assertEqual(store.get(record.id).name, "Renamed")
+
+    def test_edit_clears_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed()
+                rc, _out, err = self._run(
+                    ["shock", "manage", "edit", record.id, "--name", ""]
+                )
+                self.assertEqual(rc, 0, err)
+                store = registry.Registry()
+                store.load()
+                self.assertIsNone(store.get(record.id).name)
+
+    def test_edit_clear_name_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed()
+                rc, _out, err = self._run(
+                    ["shock", "manage", "edit", record.id, "--clear-name"]
+                )
+                self.assertEqual(rc, 0, err)
+                store = registry.Registry()
+                store.load()
+                self.assertIsNone(store.get(record.id).name)
+
+    def test_edit_name_and_clear_conflict(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit) as caught:
+                        cli.main(
+                            ["shock", "manage", "edit", record.id,
+                             "--name", "x", "--clear-name"]
+                        )
+                self.assertNotEqual(caught.exception.code, 0)
+
+    def test_edit_no_fields_returns_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed()
+                rc, _out, err = self._run(["shock", "manage", "edit", record.id])
+                self.assertEqual(rc, 2)
+                self.assertIn("nothing to edit", err)
+
+    def test_edit_unknown_id_returns_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                rc, _out, err = self._run(
+                    ["shock", "manage", "edit", "missing", "--name", "x"]
+                )
+                self.assertEqual(rc, 1)
+                self.assertIn("no shell with id", err)
+
+    def test_delete_removes_shell(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed()
+                rc, out, err = self._run(
+                    ["shock", "manage", "delete", record.id]
+                )
+                self.assertEqual(rc, 0, err)
+                self.assertIn("deleted", out)
+                store = registry.Registry()
+                store.load()
+                self.assertIsNone(store.get(record.id))
+
+    def test_delete_unknown_id_returns_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                rc, _out, err = self._run(
+                    ["shock", "manage", "delete", "missing"]
+                )
+                self.assertEqual(rc, 1)
+                self.assertIn("no shell with id", err)
+
 
 if __name__ == "__main__":
     unittest.main()

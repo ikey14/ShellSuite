@@ -12,7 +12,7 @@ import json
 import os
 import tempfile
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +31,10 @@ ORDER_FIELDS: tuple[str, ...] = (
 )
 DATE_FIELDS: tuple[str, ...] = ("created_at", "last_used")
 FILTER_OPS: tuple[str, ...] = ("==", "!=", "contains")
+
+# Attributes a user may change with `manage edit`. Identity/derived fields
+# (id, url, vector, mode, has_secret, timestamps) are not editable.
+EDITABLE_FIELDS: tuple[str, ...] = ("name",)
 
 
 class RegistryError(Exception):
@@ -213,6 +217,33 @@ class Registry:
 
     def all(self) -> list[ShellRecord]:
         return list(self.shells)
+
+    def get(self, shell_id: str) -> ShellRecord | None:
+        for record in self.shells:
+            if record.id == shell_id:
+                return record
+        return None
+
+    def update(self, shell_id: str, changes: dict) -> ShellRecord:
+        """Apply editable ``changes`` to the shell with ``shell_id``."""
+        unknown = [key for key in changes if key not in EDITABLE_FIELDS]
+        if unknown:
+            raise RegistryError(f"field not editable: {unknown[0]!r}")
+
+        for index, record in enumerate(self.shells):
+            if record.id == shell_id:
+                updated = replace(record, **changes)
+                self.shells[index] = updated
+                return updated
+        raise RegistryError(f"no shell with id {shell_id!r}")
+
+    def delete(self, shell_id: str) -> ShellRecord:
+        """Remove and return the shell with ``shell_id``."""
+        for index, record in enumerate(self.shells):
+            if record.id == shell_id:
+                del self.shells[index]
+                return record
+        raise RegistryError(f"no shell with id {shell_id!r}")
 
     def query(
         self,

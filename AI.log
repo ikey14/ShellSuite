@@ -287,3 +287,44 @@ What was tested:
 Notes:
 - Only Create (via connect) and Read (list) exist. `manage edit`/`manage delete` are the next slice; sessions and terminal remain.
 - Secrets are not stored; `has_secret` only records that a credential is needed.
+
+
+[2026-10-24 11:30] Task: registry Update + Delete (second half of objective 2.6).
+
+What was done:
+- `shellshock/manager/registry.py`:
+  - Added `EDITABLE_FIELDS = ("name",)`; identity/derived fields stay immutable.
+  - `get(id)` returns a record or None.
+  - `update(id, changes)` rejects non-editable fields and unknown ids (`RegistryError`), applies changes with `dataclasses.replace`, and leaves `created_at`/`last_used` untouched.
+  - `delete(id)` removes and returns the record; unknown id -> `RegistryError`.
+- `shellshock/cli.py`:
+  - `shock manage edit <id> --name VALUE`: empty string clears the name (stored as null); no editable flag -> exit 2; unknown id -> exit 1. Prints `updated <id>: name = '...'`.
+  - `shock manage delete <id>`: removes the record, prints `deleted <name-or-url> (<id>)`; unknown id -> exit 1. No confirmation prompt (GUI-friendly).
+- Tests: `tests/test_registry.py` gained 8 tests (get, update name/clear, immutable-field rejection, not-found, delete, delete-not-found, update+delete round-trip). `tests/test_manager_client.py` gained 6 CLI tests (edit name/clear/no-fields/unknown-id, delete success/unknown-id).
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 97 tests, all OK.
+- Manual smoke: seeded a temp registry, `manage edit <id> --name RenamedShell` (reflected in `manage list`), then `manage delete <id>` (list then reports "no shells registered").
+
+Notes:
+- `edit` currently only exposes `--name`; the registry-level whitelist makes adding `url`/`vector`/`mode` later a small change (editing `url` would need care because it is the upsert key).
+- `edit`/`delete` intentionally have no `--json` (single human-readable line; exit codes carry success/failure).
+- Objectives 2.6 (CRUD) is now complete. Remaining: 2.5 sessions, 2.4 terminal, 2.1 GUI.
+
+
+[2026-10-24 11:47] Task: add `--clear-name` to `manage edit`.
+
+Problem:
+- `shellsuite shock manage edit <id> --name ""` failed with "argument --name: expected one argument" in Windows PowerShell 5.1, because PowerShell does not forward empty-string arguments to native executables. The unit tests passed because they call `cli.main()` directly, bypassing the shell.
+
+What was done:
+- `shellshock/cli.py`: `manage edit` now has a mutually exclusive `--name VALUE` / `--clear-name` group. `--clear-name` sets the name to null; `--name ""` still clears it for shells that do pass empty args. The "nothing to edit" message mentions both flags.
+- `tests/test_manager_client.py`: added `test_edit_clear_name_flag` (name becomes null) and `test_edit_name_and_clear_conflict` (both flags -> argparse SystemExit).
+
+What was tested:
+- `python -m unittest discover -s tests -v` -> 99 tests, all OK.
+- Manual smoke: `manage edit <id> --clear-name` prints `updated <id>: name = None` and `manage list` then shows the URL as the title.
+
+Notes:
+- This is a CLI-surface fix only; the registry already stored null correctly.
+- For bash/cmd, `--name ""` continues to work as before.
