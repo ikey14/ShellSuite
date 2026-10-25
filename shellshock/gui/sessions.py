@@ -8,6 +8,7 @@ from tkinter import messagebox, ttk
 from shellsuite.gui import async_utils, cli_client, query, theme, widgets
 from shellsuite.gui.app import Section
 from shellshock.manager import sessions as sessions_data
+from shellshock.manager import filters
 
 from . import terminal
 
@@ -93,6 +94,7 @@ class SessionsSection(Section):
         self.panel = widgets.FilterOrderPanel(
             outer,
             fields=sessions_data.SESSION_FIELDS,
+            operators = filters.FILTER_OPS,
             date_fields=sessions_data.SESSION_DATE_FIELDS,
             on_apply=self._load_sessions,
             default_order="started_at",

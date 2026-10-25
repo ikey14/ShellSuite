@@ -7,7 +7,7 @@ from tkinter import messagebox
 
 from shellsuite.gui import async_utils, cli_client, theme, widgets
 from shellsuite.gui.app import Section
-from shellshock.manager import registry
+from shellshock.manager import registry, filters
 
 from . import terminal
 from .dialogs import ConnectDialog, RenameDialog
@@ -21,6 +21,7 @@ class ShellsSection(Section):
         self.panel = widgets.FilterOrderPanel(
             outer,
             fields=registry.ORDER_FIELDS,
+            operators = filters.FILTER_OPS,
             date_fields=registry.DATE_FIELDS,
             on_apply=self.refresh,
             default_order="last_used",

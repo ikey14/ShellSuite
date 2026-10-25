@@ -186,9 +186,9 @@ class HoverCard(tk.Frame):
 class FilterOrderPanel(tk.Frame):
     """Structured order + filter controls shared by the list views."""
 
-    OPERATORS = ("==", "!=", "contains")
+    # OPERATORS = ("==", "!=", "contains")
 
-    def __init__(self, parent, *, fields, date_fields, on_apply,
+    def __init__(self, parent, *, fields, operators, date_fields, on_apply,
                  default_order: str, default_descending: bool = True,
                  shell_choices=None):
         super().__init__(
@@ -197,6 +197,7 @@ class FilterOrderPanel(tk.Frame):
         )
         self.pack_propagate(False)
         self._fields = tuple(fields)
+        self._operators = tuple(operators)
         self._date_fields = tuple(date_fields)
         self._on_apply = on_apply
         self._rows: list[dict] = []
@@ -282,9 +283,9 @@ class FilterOrderPanel(tk.Frame):
         )
         field_combo.pack(side="left", fill="x", expand=True)
 
-        operator_var = tk.StringVar(value="==")
+        operator_var = tk.StringVar(value= self._operators[0])
         operator_combo = ttk.Combobox(
-            row, textvariable=operator_var, values=self.OPERATORS,
+            row, textvariable=operator_var, values=self._operators,
             state="readonly", width=9,
         )
         operator_combo.pack(side="left", padx=(4, 4))
