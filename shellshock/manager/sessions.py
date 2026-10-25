@@ -273,7 +273,9 @@ def _value(summary: SessionSummary, field: str) -> str:
 
 def _matches(summary: SessionSummary, flt: tuple[str, str, str]) -> bool:
     attr, op, value = flt
-    return filters.matches(_value(summary, attr), op, value)
+    return filters.matches(
+        _value(summary, attr), op, value, date=attr in SESSION_DATE_FIELDS
+    )
 
 
 def _sort_key(summary: SessionSummary, field: str):

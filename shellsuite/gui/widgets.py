@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from . import icons, query, theme
+from .date_picker import DateEntry, is_date_text
 
 
 def label(parent, text: str = "", *, muted: bool = False, bold: bool = False,
@@ -186,18 +187,18 @@ class HoverCard(tk.Frame):
 class FilterOrderPanel(tk.Frame):
     """Structured order + filter controls shared by the list views."""
 
-    # OPERATORS = ("==", "!=", "contains")
-
     def __init__(self, parent, *, fields, operators, date_fields, on_apply,
                  default_order: str, default_descending: bool = True,
                  shell_choices=None):
         super().__init__(
             parent, bg=theme.BG, highlightthickness=1,
-            highlightbackground=theme.BORDER, bd=0, width=250,
+            highlightbackground=theme.BORDER, bd=0, width=320,
         )
         self.pack_propagate(False)
         self._fields = tuple(fields)
         self._operators = tuple(operators)
+        if not self._operators:
+            raise ValueError("operators must not be empty")
         self._date_fields = tuple(date_fields)
         self._on_apply = on_apply
         self._rows: list[dict] = []
@@ -283,24 +284,58 @@ class FilterOrderPanel(tk.Frame):
         )
         field_combo.pack(side="left", fill="x", expand=True)
 
-        operator_var = tk.StringVar(value= self._operators[0])
+        operator_var = tk.StringVar(value=self._operators[0])
         operator_combo = ttk.Combobox(
             row, textvariable=operator_var, values=self._operators,
             state="readonly", width=9,
         )
         operator_combo.pack(side="left", padx=(4, 4))
 
-        value_var = tk.StringVar()
-        value_entry = ttk.Entry(row, textvariable=value_var, width=8)
-        value_entry.pack(side="left", fill="x", expand=True)
+        holder = tk.Frame(row, bg=theme.BG)
+        holder.pack(side="left", fill="x", expand=True)
 
-        data = {"frame": row, "field": field_var, "op": operator_var, "value": value_var}
+        value_var = tk.StringVar()
+        data = {
+            "frame": row, "field": field_var, "op": operator_var,
+            "value": value_var, "holder": holder,
+            "value_widget": None, "is_date": None,
+        }
+
         remove = IconButton(
             row, "close", lambda: self._remove_row(data), size=12,
             color=theme.MUTED, bg=theme.BG,
         )
         remove.pack(side="left", padx=(4, 0))
         self._rows.append(data)
+        field_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event, item=data: self._on_field_changed(item),
+            add="+",
+        )
+        self._make_value_widget(data)
+
+    def _make_value_widget(self, data: dict) -> None:
+        for child in data["holder"].winfo_children():
+            child.destroy()
+
+        date_field = data["field"].get() in self._date_fields
+        current = data["value"].get().strip()
+        if date_field and current and not is_date_text(current):
+            data["value"].set("")
+
+        if date_field:
+            widget = DateEntry(data["holder"], textvariable=data["value"])
+        else:
+            widget = ttk.Entry(data["holder"], textvariable=data["value"], width=8)
+        widget.pack(fill="x", expand=True)
+        data["value_widget"] = widget
+        data["is_date"] = date_field
+
+    def _on_field_changed(self, data: dict) -> None:
+        is_date = data["field"].get() in self._date_fields
+        if is_date == data["is_date"]:
+            return
+        self._make_value_widget(data)
 
     def _remove_row(self, data: dict) -> None:
         data["frame"].destroy()

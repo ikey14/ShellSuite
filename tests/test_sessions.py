@@ -136,6 +136,25 @@ class ListingTests(_SessionTest):
             ["b"],
         )
 
+    def test_filter_numeric_commands(self):
+        shell = self._shell()
+        self._record_session(shell, commands=2)
+        self._record_session(shell, commands=60)
+
+        self.assertEqual(
+            len(sessions.list_sessions(filters_expr=("commands > 50",))), 1
+        )
+        self.assertEqual(
+            len(sessions.list_sessions(filters_expr=("commands < 50",))), 1
+        )
+
+    def test_filter_date_excludes_missing(self):
+        shell = self._shell()
+        self._record_session(shell, finish=False)
+        self.assertEqual(
+            sessions.list_sessions(filters_expr=("ended_at > 2000-01-01",)), []
+        )
+
     def test_order_by_started_at(self):
         shell = self._shell()
         stamps = iter(["2026-01-01T00:00:00+00:00", "2026-01-02T00:00:00+00:00"])

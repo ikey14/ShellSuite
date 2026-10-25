@@ -110,7 +110,9 @@ def parse_filter(expression: str) -> tuple[str, str, str]:
 
 def _matches(record: ShellRecord, flt: tuple[str, str, str]) -> bool:
     attr, op, value = flt
-    return filters.matches(_field_value(record, attr), op, value)
+    return filters.matches(
+        _field_value(record, attr), op, value, date=attr in DATE_FIELDS
+    )
 
 
 class Registry:

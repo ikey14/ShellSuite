@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from shellsuite.gui import query
+from shellsuite.gui.date_picker import is_date_text
 
 
 class QueryTests(unittest.TestCase):
@@ -30,6 +31,13 @@ class QueryTests(unittest.TestCase):
     def test_default_direction(self):
         self.assertTrue(query.default_direction("started_at", ("started_at",)))
         self.assertFalse(query.default_direction("name", ("started_at",)))
+
+    def test_is_date_text(self):
+        self.assertTrue(is_date_text("2026-01-31"))
+        self.assertTrue(is_date_text("2026-01-31T12:00:00+00:00"))
+        self.assertFalse(is_date_text(""))
+        self.assertFalse(is_date_text("31/01/2026"))
+        self.assertFalse(is_date_text("2026-13-01"))
 
 
 if __name__ == "__main__":

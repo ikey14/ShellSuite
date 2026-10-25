@@ -171,6 +171,22 @@ class RegistryTests(unittest.TestCase):
             ["http://x/c.php"],
         )
 
+    def test_query_date_filters(self):
+        store = self._registry()
+        self._seed(store)
+        self.assertEqual(
+            [record.url for record in store.query(filters=("created_at == 2026-01-02",))],
+            ["http://x/b.php"],
+        )
+        self.assertEqual(
+            [record.url for record in store.query(filters=("created_at > 2026-01-02",))],
+            ["http://x/c.php"],
+        )
+        self.assertEqual(
+            [record.url for record in store.query(filters=("created_at < 2026-01-02",))],
+            ["http://x/a.php"],
+        )
+
     def test_query_rejects_bad_input(self):
         store = self._registry()
         self._seed(store)

@@ -110,6 +110,16 @@ def draw_icon(canvas: tk.Canvas, kind: str, color: str, size: int = 22,
         line((12, 12), (12, 7.5))
         line((12, 12), (16, 14.5))
         polygon((3, 8), (8.5, 6.5), (5.5, 11.5))
+    elif kind == "calendar":
+        rectangle(4, 6, 20, 20)
+        line((4, 10), (20, 10))
+        line((8, 3), (8, 7))
+        line((16, 3), (16, 7))
+        line((8, 14), (10, 14))
+        line((12, 14), (14, 14))
+        line((16, 14), (18, 14))
+        line((8, 17), (10, 17))
+        line((12, 17), (14, 17))
     elif kind == "logo":
         rectangle(3, 8, 21, 20)
         line((3, 11), (21, 11))

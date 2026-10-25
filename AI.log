@@ -592,3 +592,27 @@ What was tested:
 - `python -m unittest discover -s tests` -> 148 tests, all OK.
 - Tk smoke: five icon sizes loaded (256/64/48/32/16), `iconphoto` succeeds, and `GetCurrentProcessExplicitAppUserModelID` returns `ShellSuite.Desktop`.
 - Visual taskbar verification pending; Windows may cache the previous icon, so the GUI may need to be relaunched/unpinned. The console window, if launched from a terminal, still shows the Python icon.
+
+
+[2026-10-25 16:41] Task: numeric range filters, decoupled GUI operators and date picker.
+
+What was done:
+- `shellshock/manager/filters.py`: range operators are part of `FILTER_OPS`; `matches()` now handles `>`/`<` numerically when both sides are numbers, lexicographically for dates/text, rejects empty values for ranges, and supports date-aware comparison. Date fields compare the `YYYY-MM-DD` portion when the filter value is date-only, so `created_at == 2026-10-25` means the whole UTC day; full timestamps still compare exactly. Cleaned the implementation to use operator literals instead of tuple indexes and a readable error message.
+- `registry._matches()` and `sessions._matches()` pass `date=attr in DATE_FIELDS` / `SESSION_DATE_FIELDS`.
+- `shellsuite/gui/widgets.py`: `FilterOrderPanel` no longer hardcodes operators. It takes an `operators` argument (validating it is non-empty) and uses its first entry as the default. The panel width grew from 250 to 280 for the date widget.
+- `shellshock/gui/shells.py` and `sessions.py` pass `operators=filters.FILTER_OPS`, keeping `shellsuite` independent of `shellshock`.
+- New `shellsuite/gui/date_picker.py`: `DateEntry` with an editable `YYYY-MM-DD` entry and a calendar button. The popup has month navigation, weekday grid, Today (UTC), Clear and Close; Escape closes it.
+- `FilterOrderPanel` swaps the value widget between a text entry and `DateEntry` when the selected field is in `date_fields`, preserving valid date values and clearing invalid ones.
+- Added a vector `calendar` icon to `icons.py` (no asset required).
+- Tests: new `tests/test_filters.py`, registry date filtering, session `commands >/<` and missing `ended_at`, and `is_date_text` coverage.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 158 tests, all OK.
+- Tk smoke: both panels expose `==`, `!=`, `contains`, `>`, `<`; `created_at` and `started_at` switch to `DateEntry`; the calendar opens, selecting 15 stores `2026-01-15`; switching back to text fields restores `ttk.Entry`; expressions are `created_at == 2026-01-15` and `started_at > 2026-10-25`; panel width is 280.
+- Confirmed `shellsuite/` contains no imports of `shellshock`.
+
+
+[2026-10-25 16:42] Follow-up: final filter panel width.
+
+- After measuring the date row, 280 px left the date entry only 76 px wide. The panel is now 320 px (`shellsuite/gui/widgets.py`), giving the date entry 96 px with room for `YYYY-MM-DD`.
+- Re-ran `python -m unittest discover -s tests` -> 158 tests, all OK.
