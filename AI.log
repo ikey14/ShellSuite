@@ -616,3 +616,19 @@ What was tested:
 
 - After measuring the date row, 280 px left the date entry only 76 px wide. The panel is now 320 px (`shellsuite/gui/widgets.py`), giving the date entry 96 px with room for `YYYY-MM-DD`.
 - Re-ran `python -m unittest discover -s tests` -> 158 tests, all OK.
+
+
+[2026-10-25 18:54] Task: write the English README.
+
+What was done:
+- Replaced the `README_EN.md` placeholder with a full guide.
+- Installation: prerequisite versions, Windows/Linux/macOS virtual environment, editable install, verification, GUI dependencies, state directory and `SHELLSUITE_HOME`.
+- Usage: general CLI form, Creator (vectors/modes, plain/auth/encrypted, drivers, secrets), Uploader (fields/headers/cookies/forms), Manager (connect/list/show/edit/delete/terminal), GUI features, filter syntax and the new date picker, DVWA lab notes and a quick-example block.
+- Kept the README honest about scope: ShellShock only, ShellBlock is a placeholder, and the tool is lab-only.
+- Kept Windows PowerShell as the primary example with Linux/macOS alternatives.
+- Removed the placeholder repository URL; the installation steps start from the project folder instead.
+
+What was tested:
+- Checked Markdown fences are balanced (72 fences, 456 lines) and `git diff --check` reports no whitespace errors.
+- Verified the installed entry point prints `shellsuite 0.1.0`.
+- Command examples were cross-checked against the CLI help output.
