@@ -21,6 +21,18 @@ from shellsuite import cli, crypto
 from shellsuite.protocol import contract, encoding
 
 
+class _FlushCounter(io.StringIO):
+    """StringIO that records how often flush() is called."""
+
+    def __init__(self):
+        super().__init__()
+        self.flushes = 0
+
+    def flush(self):
+        self.flushes += 1
+        super().flush()
+
+
 def _start_shell_server(secret: str):
     """A minimal webshell emulator: decode, verify auth, decrypt, reply framed."""
 
@@ -503,6 +515,20 @@ class ManagerRegistryCliTests(_ServerTest):
                 self.assertEqual(events[1]["command"], "id")
                 self.assertTrue(events[1]["success"])
                 self.assertIn("ran:id", events[1]["output"])
+
+    def test_terminal_json_flushes_events(self):
+        server = self.start_shell("hunter2")
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(os.environ, {"SHELLSUITE_HOME": tmp}):
+                record = self._seed_shell(_url(server), "cookie", "plain", False)
+                out, err = _FlushCounter(), io.StringIO()
+                with mock.patch("sys.stdin", io.StringIO("id\nexit\n")):
+                    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                        rc = cli.main(
+                            ["shock", "manage", "terminal", record.id, "--json"]
+                        )
+                self.assertEqual(rc, 0, err.getvalue())
+                self.assertGreaterEqual(out.flushes, 2)
 
     def test_terminal_missing_secret_returns_2(self):
         server = self.start_shell("hunter2")

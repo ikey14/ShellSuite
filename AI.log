@@ -386,3 +386,209 @@ What was tested:
 Notes:
 - Objective 2.5 is done. Only the GUI (2.1) remains.
 - Sessions survive restarts (files on disk); deleting a shell keeps its sessions; the secret is never stored.
+
+
+[2026-10-24 23:36] Task: graphical interface (objective 2.1).
+
+What was done:
+- Added a ShellSuite-level GUI framework under `shellsuite/gui/`:
+  - `app.py`: main window, dark top bar (logo, section tabs, red Exit), active-terminals sidebar, content switching, section discovery (imports `<module>.gui` and calls `register(app)`), terminal lifecycle helpers.
+  - `theme.py`: the specified palette (`#1E1E1E`, `#252526`, `#3C3C3C`, `#D4D4D4`, `#9D9D9D`, `#D20A0A`, `#AF1414`, `#141496`) plus derived hover/active tints; `clam` ttk theme and dark combobox lists.
+  - `icons.py`: Canvas-drawn line icons (logo, globe, clock, terminal, edit, trash, plus, close, chevron) on a 24x24 grid; optional image override from `shellsuite/gui/assets/<kind>.png`.
+  - `widgets.py`: `IconButton` (hover colours), `ScrollableFrame`, `HoverCard`, structured `FilterOrderPanel` (order + direction + optional shell selector + field/operator/value filter rows, Add/Apply).
+  - `cli_client.py`: Tk-free subprocess bridge to `python -m shellsuite ...` (no business logic duplicated); JSON parsing and `CliError`.
+  - `async_utils.py`: worker threads marshalled back to Tk via `after`.
+  - `query.py`: pure helpers (filter expressions, session title, default direction).
+- Added `shellsuite/__main__.py` so the GUI can reliably spawn `python -m shellsuite`.
+- `shellsuite/cli.py`: new top-level `shellsuite gui` command (lazy import).
+- Added `shellshock/gui/`:
+  - `shells.py`: cards (name/URL) with terminal, edit and delete actions; connect `+` button; structured filter/order panel; delete confirmation.
+  - `sessions.py`: cards titled `ShellName - StartedAt - Status`; `>_` opens a terminal for the corresponding shell, trash deletes (with confirmation), double-click opens a read-only transcript; shell selector maps to `--id`.
+  - `terminal.py`: embedded live terminal (one per shell) using the `manage terminal --json` line protocol; header close (red X), read-only output, input line, `exit`/EOF/error handling, sidebar entry + one-per-shell focus.
+  - `dialogs.py`: dark Secret, Rename (empty clears) and Connect dialogs.
+  - `__init__.py`: registers the Shells and Sessions sections.
+
+Colour decisions:
+- Active-terminal sidebar selection uses `#252526` + a `#141496` left accent; row hover uses a subtle `#141496` tint (`#1C1C3C`). `#D20A0A` is reserved for destructive/close/Exit.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 147 tests, all OK (new GUI tests: pure query helpers, CLI bridge arg/JSON/error handling, terminal spawn args, import smoke).
+- `python -m shellsuite --help` lists `gui`; `python -m shellsuite gui --help` works.
+- Headless app smoke: instantiate and destroy the window without errors.
+- Data-backed smoke: seeded a shell + session, rendered Shells then Sessions, auto-quit; no tracebacks.
+
+Notes:
+- The chat icons could not be saved as files from the conversation, so the GUI uses Canvas-drawn equivalents. Dropping properly themed PNGs into `shellsuite/gui/assets/` (named logo.png, globe.png, clock.png, terminal.png, edit.png, trash.png, plus.png, close.png, chevron.png) overrides the drawings.
+- GUI is a thin layer: all actions go through the CLI; the live terminal uses the existing JSON line protocol.
+- Manual GUI testing by the project owner is still pending.
+- Objective 2.1 implemented; all ShellShock objectives now have code. Nothing committed.
+
+
+[2026-10-25 11:20] Task: GUI terminal output fix and console-style redesign.
+
+What was done:
+- Fixed the missing command output: the child's stdout is a pipe, so `sys.stdout` was block-buffered and JSON events never reached the GUI. `shellshock/cli.py` now writes the session event and every terminal line through a flushing writer. `shellsuite/gui/cli_client.py` also spawns the terminal with `python -u` as a second safeguard.
+- Redesigned `shellshock/gui/terminal.py` to look like a real console:
+  - Pitch-black surface (`theme.TERMINAL_BG = "#000000"`), no input box, `wrap="char"`.
+  - The prompt is part of the scrollback flow: a borderless `Entry` is embedded after a red (`#AF1414`) prompt; on submit the prompt line becomes a normal command echo and a new prompt is created when the output arrives.
+  - Prompt uses the shell name with the URL as fallback; output is `#D4D4D4`; errors stay in the destructive red `#D20A0A`.
+  - Kept the header (name + close X); added Up/Down command history and focus handling when the terminal is visible.
+  - Commands remain serial (input appears only after the reply) and a failed command still ends the terminal, as intended.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK (new regression test asserts the JSON terminal flushes each event; CLI bridge test asserts `-u`).
+- Headless GUI smoke against the project's fake webshell server: opened a terminal, ran `id`, verified the Text contains `smoke> id`, `ran:id` and a fresh prompt.
+- `Tk` focus smoke confirmed the embedded Entry can take focus inside a disabled Text.
+
+Notes:
+- Terminal output is now live; manual DVWA check pending.
+- Error lines stay `#D20A0A`; the red prompt uses the border red to respect the palette rule.
+
+
+[2026-10-25 11:29] Task: click anywhere in the GUI terminal to type.
+
+What was done:
+- `shellshock/gui/terminal.py`: clicking the output, the black body, the header or the terminal background now schedules focus on the current prompt input (after Tk finishes its own click handling, so drag-selection still works).
+- The close button keeps its own behaviour (clicks on it do not bubble to the header).
+- Because focus moves to the input, added a `Ctrl+C` binding on the input and output that first copies the selected terminal output when there is a selection, and otherwise falls back to the widget's normal copy.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Tk smoke: simulated clicks on the output, body and header; focus ended on the embedded prompt Entry in all three cases. Selected output was copied to the clipboard correctly.
+
+
+[2026-10-25 11:33] Task: make terminal text selection visible again.
+
+What was done:
+- Clicking to type moves focus from the terminal output `Text` to the prompt `Entry`. Tk does not draw a Text selection while the widget is unfocused unless `-inactiveselectbackground` is set (it was empty), so the selection existed but was invisible.
+- `shellshock/gui/terminal.py`: set `inactiveselectbackground=theme.SHELL_BORDER` (`#141496`) on the output Text. The click-to-type and `Ctrl+C` bindings are unchanged.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Tk smoke against the fake webshell server: drag-selected terminal output, confirmed the `sel` range exists, the inactive colour is `#141496`, the prompt Entry still receives focus on click, and the selected text can be copied.
+
+
+[2026-10-25 12:44] Task: stop the GUI list scrollbar from scrolling into empty space.
+
+What was done:
+- `shellsuite/gui/widgets.py`: `ScrollableFrame` now synchronises its scrollregion from the content's requested height and tracks whether scrolling is needed.
+  - When the content fits, it resets to the top (`yview_moveto(0)`) and disables the scrollbar (kept visible, full thumb).
+  - When the content overflows, the scrollbar is re-enabled.
+  - The mouse-wheel handler returns early and resets to the top if the content fits; otherwise it scrolls normally.
+- `shellshock/gui/shells.py` and `shellshock/gui/sessions.py`: both `_render` methods call `scroll.sync()` after rebuilding the cards, including the empty-list path.
+- The explicit sync is needed because Tk can keep the inner frame's old actual height after cards are removed; relying only on `<Configure>` left a stale scrollregion and let the old view offset show blank space.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Tk smoke: 6 cards -> region 420, scrollbar disabled, wheel up/down leaves `canvasy(0)` at 0; 20 cards -> scrollbar enabled and scrolling works; 20 -> 6 cards -> region shrinks to 420, view resets to top and scrolling is blocked; 6 -> 20 -> re-enabled; resizing the window shorter/taller enables/disables it correctly.
+
+
+[2026-10-25 12:47] Task: hide the list scrollbar when it is not needed.
+
+What was done:
+- `shellsuite/gui/widgets.py`: the disabled state caused visual glitches, so `ScrollableFrame` now packs the scrollbar only when the content overflows and `pack_forget()`s it when the content fits. A `_scrollbar_visible` flag prevents repeated pack/unpack cycles during `<Configure>` events.
+- The content stays top-aligned (`yview_moveto(0)`) and the wheel handler still refuses to scroll when everything fits.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Tk smoke: 6 cards -> scrollbar unmapped; 20 cards -> mapped and scrollable; 20 -> 6 -> unmapped again; 6 -> 20 -> mapped; short/tall window resizes switch it correctly. Canvas width grows by the scrollbar width when hidden, as expected when the widget is removed.
+
+
+[2026-10-25 13:00] Task: fix the PNG icon display (scaling and tinting).
+
+What was found:
+- The PNG assets are 284-432 px while the UI requested 12-26 px, and `IconButton._render` loaded them at native size and centred them in a small Canvas. Only the centre of each image was visible: the terminal glyph lives near the edges, so it disappeared; the trash body in the centre appeared as a red square.
+- Tk's only downscale primitive is integer `subsample`; on these thin line icons it destroyed the strokes (terminal survived with 19/400 opaque pixels), so runtime subsampling was discarded.
+- The asset branch also ignored the requested `color`, so hover/muted/active states and theme colours did not apply.
+
+What was done:
+- Kept the original large PNGs in `shellsuite/gui/assets/source/`.
+- Generated exact, pre-tinted variants in `shellsuite/gui/assets/` with high-quality bicubic scaling and alpha preserved:
+  `logo-24-text`, `globe-20-{muted,text}`, `clock-20-{muted,text}`, `terminal-20-text`, `edit-20-text`, `trash-20-{accent,accent-hover}`, `plus-26-text`, `close-18-{accent,accent-hover}`, `close-12-muted`.
+  The full logo (including the "ShellSuite" text) is letterboxed into 24x24 as requested.
+- `shellsuite/gui/icons.py`: `load_asset(kind, size, color)` now loads the exact `<kind>-<size>-<role>.png`, maps theme colours to roles (`text`, `muted`, `accent`, `accent-hover`), caches `PhotoImage` objects, and returns `None` when a variant is absent so the Canvas vector icon is used instead. It never loads an unsized original.
+- `shellsuite/gui/widgets.py`: `IconButton._render` passes the size and requested colour, so hover/active/muted changes now work for assets too.
+- `pyproject.toml`: added `shellsuite.gui` package data for `assets/*.png`.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Icon smoke: all 13 variants load at the requested dimensions with non-zero opaque pixels; required assets are used (24/24 IconButtons in a rendered Shells view); `chevron` and unknown colour roles still fall back to vector drawings.
+- Generated files inspected: terminal 20x20, logo 24x24 with full logo, trash/close tinted to the accent colours.
+
+
+[2026-10-25 13:04] Task: enlarge the topbar and card-action icons.
+
+What was done:
+- Topbar (image 1): logo 24 -> 72 (3x), Shells/Sessions tab icons 20 -> 60 (3x).
+- Card actions (image 2): terminal, edit and trash 20 -> 35 (1.75x) in both Shells and Sessions cards.
+- Regenerated the corresponding PNG variants at 72/60/35 with the same high-quality scaling and theme tinting: `logo-72-text`, `globe-60-{muted,text}`, `clock-60-{muted,text}`, `terminal-35-text`, `edit-35-text`, `trash-35-{accent,accent-hover}`. Removed the now-unused 24/20 variants.
+- Unchanged: plus (26), terminal/transcript close (18), filter-row close (12), chevron (vector fallback).
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Tk smoke: rendered Shells and verified the requested sizes are actually used: logo 72x72 (canvas 80), globe/clock 60x60 (canvas 68), terminal/edit/trash 35x35 (canvas 43); the topbar is now 100 px tall.
+
+
+[2026-10-25 13:10] Task: topbar hover cleanup, logo 1.25x, align tabs with the content area.
+
+What was done:
+- `shellsuite/gui/widgets.py`: `IconButton` gained a `hover` flag. When false, it binds neither `<Enter>` nor `<Leave>`, so neither the icon colour nor the background changes on hover.
+- `shellsuite/gui/app.py`:
+  - Logo is now 90 px (1.25x the previous 72) and uses `hover=False`.
+  - Shells/Sessions tab icons use `hover=False`; hovering them no longer changes the icon. The tab text keeps its hover colour, and the icon is still clickable.
+  - `_tab_hover` now updates only the text label; it no longer recolours the icon.
+  - Added `SIDEBAR_WIDTH = 200`; the topbar logo area is padded with a computed spacer so `tabs_frame` starts at x=201, exactly where the content area starts after the 200 px terminal sidebar and its 1 px divider.
+- Regenerated `logo-90-text.png`; removed `logo-72-text.png`. Other asset sizes are unchanged.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Tk smoke: logo is 90x90 with no `<Enter>` binding; tab icons have no `<Enter>` binding; hovering a tab label changes the text colour while the icon colour stays fixed; clicking the tab icons still switches sections; `tabs_frame` x = 201 and content x = 201. The topbar is now 118 px tall because of the larger logo.
+
+
+[2026-10-25 13:19] Task: generate the chevron asset and add the icon build script to the repo.
+
+What was found:
+- `assets/source/chevron.png` existed, but the runtime only loads pre-generated `assets/chevron-14-muted.png`; the missing variant made `IconButton` fall back to the Canvas drawing.
+
+What was done:
+- Generated `shellsuite/gui/assets/chevron-14-muted.png` (14x14, bicubic, alpha preserved, tinted `#9D9D9D`) from the 30x30 source.
+- Added `tools/build_icons.ps1`: repo-relative (uses `$PSScriptRoot`), regenerates every sized/tinted variant from `assets/source/`, includes the chevron variant, validates missing sources/colour roles, and fails loudly instead of silently producing nothing.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- `icons.load_asset("chevron", 14, theme.MUTED)` returns a 14x14 image; `IconButton` now uses the PNG instead of the vector fallback.
+- `tools/build_icons.ps1` runs from the repo and regenerates all variants, including `chevron-14-muted.png` (42 opaque pixels).
+
+
+[2026-10-25 13:25] Task: make the active tab indicator a full underline.
+
+What was found:
+- In `add_section`, the icon and text were packed `side="left"` before the underline was packed `side="bottom"`. The left-packed children consumed the tab's width and height, leaving a zero-width cavity for the underline, so `fill="x"` produced a 1 px dot.
+
+What was done:
+- `shellsuite/gui/app.py`: the underline is now created and packed first (`side="bottom", fill="x"`), then the icon and text are packed above it.
+- The underline was added to the tab click/hover bindings, so clicking it selects the section and hovering it highlights the tab text.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Tk smoke: both underlines are 2 px tall and exactly as wide as their tabs (130/153 px); the active one is `#AF1414`, the inactive one `#1E1E1E`; clicking the second underline switches to Sessions and moves the red underline; hovering the first underline highlights the Shells text.
+
+
+[2026-10-25 13:33] Task: use the ShellSuite logo as the window and taskbar icon.
+
+What was found:
+- The Tk window was created without any icon, so Windows used the `python.exe` icon for the title bar and taskbar. Windows also groups the taskbar button under Python unless the process has an explicit AppUserModelID.
+
+What was done:
+- Extended `tools/build_icons.ps1` to generate app icons from the logo mark (top square of `assets/source/logo.png`, excluding the "ShellSuite" text):
+  - `appicon-16`, `appicon-32`, `appicon-48`, `appicon-64`, `appicon-256`.
+  - Light `#D4D4D4` mark on a rounded `#1E1E1E` tile, transparent outside the rounded corners, so it stays visible on light and dark taskbars.
+- `shellsuite/gui/app.py`:
+  - `_set_windows_app_id()` calls `SetCurrentProcessExplicitAppUserModelID("ShellSuite.Desktop")` before `tk.Tk()`.
+  - `_apply_window_icon()` loads the generated PNGs (largest first), keeps references on `self._window_icons`, and calls `root.iconphoto(True, *icons)` so the icon also becomes the default for dialogs.
+- The existing `assets/*.png` package-data rule already includes the new app icons.
+
+What was tested:
+- `python -m unittest discover -s tests` -> 148 tests, all OK.
+- Tk smoke: five icon sizes loaded (256/64/48/32/16), `iconphoto` succeeds, and `GetCurrentProcessExplicitAppUserModelID` returns `ShellSuite.Desktop`.
+- Visual taskbar verification pending; Windows may cache the previous icon, so the GUI may need to be relaunched/unpinned. The console window, if launched from a terminal, still shows the Python icon.

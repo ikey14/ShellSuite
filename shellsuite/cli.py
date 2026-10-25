@@ -34,6 +34,16 @@ def _load_module_parser(name: str, subparsers: argparse._SubParsersAction) -> bo
     return True
 
 
+def _cmd_gui(_args: argparse.Namespace) -> int:
+    try:
+        from .gui.app import run
+    except ImportError as exc:
+        print(f"error: the GUI is unavailable: {exc}", file=sys.stderr)
+        return 1
+    run()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="shellsuite",
@@ -47,6 +57,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="module", metavar="<module>")
     for name in config.MODULE_NAMES:
         _load_module_parser(name, subparsers)
+
+    gui = subparsers.add_parser("gui", help="launch the graphical interface")
+    gui.set_defaults(handler=_cmd_gui)
     return parser
 
 

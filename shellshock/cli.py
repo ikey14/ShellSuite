@@ -21,6 +21,16 @@ from .manager import client, registry, sessions, terminal
 COMMAND = "shock"
 
 
+def _flushing(stream):
+    """Writer that flushes after every write (line protocol over a pipe)."""
+
+    def write(text: str) -> None:
+        stream.write(text)
+        stream.flush()
+
+    return write
+
+
 def _cmd_create(args: argparse.Namespace) -> int:
     spec = WebShellSpec(
         vector=args.vector,
@@ -404,6 +414,7 @@ def _cmd_manage_terminal(args: argparse.Namespace) -> int:
             )
             + "\n"
         )
+        sys.stdout.flush()
     else:
         def read_line(prompt: str) -> str | None:
             try:
@@ -416,8 +427,8 @@ def _cmd_manage_terminal(args: argparse.Namespace) -> int:
         rc = terminal.interact(
             shell,
             read_line=read_line,
-            write=sys.stdout.write,
-            write_err=sys.stderr.write,
+            write=_flushing(sys.stdout),
+            write_err=_flushing(sys.stderr),
             timeout=args.timeout,
             json_mode=args.json,
             on_event=recorder.record if recorder is not None else None,

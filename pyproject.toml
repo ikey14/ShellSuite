@@ -18,3 +18,4 @@ include = ["shellsuite*", "shellshock*", "shellblock*"]
 
 [tool.setuptools.package-data]
 "shellshock.creator" = ["templates/*.tmpl"]
+"shellsuite.gui" = ["assets/*.png"]
