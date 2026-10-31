@@ -32,35 +32,67 @@ function __ss_keystream($password, $nonce, $length) {
     return substr($stream, 0, $length);
 }
 
+function __ss_keys($password) {
+    $enc = hash_hmac("sha256", "@ENC_LABEL@", $password, true);
+    $mac = hash_hmac("sha256", "@MAC_LABEL@", $password, true);
+    return array($enc, $mac);
+}
+
+function __ss_same($a, $b) {
+    if (strlen($a) !== strlen($b)) {
+        return false;
+    }
+    $d = 0;
+    for ($i = 0; $i < strlen($a); $i++) {
+        $d |= ord($a[$i]) ^ ord($b[$i]);
+    }
+    return $d === 0;
+}
+
 function __ss_decrypt($payload, $password) {
     if (strpos($payload, "@PREFIX@") !== 0) {
         return "";
     }
     $raw = __ss_b64d(substr($payload, strlen("@PREFIX@")));
-    $nonce_len = @NONCE_BYTES@;
-    if ($raw === false || strlen($raw) < $nonce_len) {
+    $nonceLen = @NONCE_BYTES@;
+    $macLen = @MAC_BYTES@;
+    if ($raw === false || strlen($raw) < $nonceLen + $macLen) {
         return "";
     }
-    $nonce = substr($raw, 0, $nonce_len);
-    $ct = substr($raw, $nonce_len);
-    return $ct ^ __ss_keystream($password, $nonce, strlen($ct));
+    $keys = __ss_keys($password);
+    $nonce = substr($raw, 0, $nonceLen);
+    $ct = substr($raw, $nonceLen, strlen($raw) - $nonceLen - $macLen);
+    $tag = substr($raw, strlen($raw) - $macLen);
+    if (!__ss_same($tag, hash_hmac("sha256", $nonce . $ct, $keys[1], true))) {
+        return "";
+    }
+    return $ct ^ __ss_keystream($keys[0], $nonce, strlen($ct));
 }
 
 function __ss_encrypt($plaintext, $password) {
+    $keys = __ss_keys($password);
     $nonce = substr(md5(uniqid("", true) . mt_rand(), true), 0, @NONCE_BYTES@);
-    $ct = $plaintext ^ __ss_keystream($password, $nonce, strlen($plaintext));
-    return "@PREFIX@" . __ss_b64e($nonce . $ct);
+    $ct = $plaintext ^ __ss_keystream($keys[0], $nonce, strlen($plaintext));
+    $blob = $nonce . $ct;
+    $tag = hash_hmac("sha256", $blob, $keys[1], true);
+    return "@PREFIX@" . __ss_b64e($blob . $tag);
 }
 """
 
 
 def php_helpers() -> str:
     """PHP helper functions for encrypted shells."""
-    return (
-        _HELPERS.replace("@PREFIX@", contract.ENCRYPTED_PREFIX)
-        .replace("@NONCE_BYTES@", str(contract.NONCE_BYTES))
-        .strip("\n")
+
+    _ALIASES = (
+    _HELPERS.replace("@PREFIX@", contract.ENCRYPTED_PREFIX)
+    .replace("@NONCE_BYTES@", str(contract.NONCE_BYTES))
+    .replace("@MAC_BYTES@", str(contract.MAC_BYTES))
+    .replace("@ENC_LABEL@", contract.ENC_LABEL.decode("ascii"))
+    .replace("@MAC_LABEL@", contract.MAC_LABEL.decode("ascii"))
+    .strip("\n")
     )
+
+    return (_ALIASES)
 
 
 def decrypt_block() -> str:

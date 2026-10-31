@@ -38,11 +38,12 @@ TRANSPORT_ENCODING = "url"
 
 # --- Payload encryption (mode == "encrypted") ------------------------------
 
-# Scheme: XOR with an HMAC-SHA256 counter-mode keystream. A payload is
-# "<ENCRYPTED_PREFIX><base64url(nonce || ciphertext)>" (base64url, no padding).
 ENCRYPTION = "xor-hmac-sha256"
 ENCRYPTED_PREFIX = "SSENC1."
-NONCE_BYTES = 8
+NONCE_BYTES = 16
+MAC_BYTES = 32
+ENC_LABEL = b"ss-enc"
+MAC_LABEL = b"ss-mac"
 
 # --- Response framing ------------------------------------------------------
 
