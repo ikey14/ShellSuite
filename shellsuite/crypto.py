@@ -16,22 +16,30 @@ import os
 
 from .protocol import contract
 
-def _keys(password: str) -> tuple[bytes, bytes]:
-    """Derive two keys from one password. One used as encryption key (pos 0) and the other as mac (pos 1)"""
+def getCredential(password: str) -> str:
+    """Derives key from the password to be used in the php to avoid leaking the master password used for the other keys"""
     rawPass = password.encode("utf-8")
+
+    credKey = hmac.new(rawPass, contract.AUTH_LABEL, hashlib.sha256).hexdigest()
+
+    return credKey
+
+def _keys(credential: str) -> tuple[bytes, bytes]:
+    """Derive two keys from one credential. One used as encryption key (pos 0) and the other as mac (pos 1)"""
+    rawPass = credential.encode("utf-8")
 
     encKey = hmac.new(rawPass, contract.ENC_LABEL, hashlib.sha256).digest()
     macKey = hmac.new(rawPass, contract.MAC_LABEL, hashlib.sha256).digest()
 
     return encKey, macKey
 
-def _keystream(password: bytes, nonce: bytes, length: int) -> bytes:
+def _keystream(credential: bytes, nonce: bytes, length: int) -> bytes:
     """HMAC-SHA256 counter-mode keystream, ``length`` bytes long."""
     stream = bytearray()
     counter = 0
     while len(stream) < length:
         stream += hmac.new(
-            password, nonce + str(counter).encode("ascii"), hashlib.sha256
+            credential, nonce + str(counter).encode("ascii"), hashlib.sha256
         ).digest()
         counter += 1
     return bytes(stream[:length])
@@ -41,7 +49,7 @@ def _xor(a: bytes, b: bytes) -> bytes:
     return bytes(x ^ y for x, y in zip(a, b))
 
 
-def encrypt(text: str, password: str, nonce: bytes | None = None) -> str:
+def encrypt(text: str, credential: str, nonce: bytes | None = None) -> str:
     """Encrypt ``text`` into the contract envelope."""
     data = text.encode("utf-8")
     if nonce is None:
@@ -50,7 +58,7 @@ def encrypt(text: str, password: str, nonce: bytes | None = None) -> str:
     if len(nonce) != contract.NONCE_BYTES:
         raise ValueError("nonce length isn't contract length")
     
-    encKey, macKey = _keys(password)
+    encKey, macKey = _keys(credential)
     ciphertext = _xor(data, _keystream(encKey, nonce, len(data)))
     blob = nonce + ciphertext
     tag = hmac.new(macKey, blob, hashlib.sha256).digest()
@@ -58,7 +66,7 @@ def encrypt(text: str, password: str, nonce: bytes | None = None) -> str:
 
     return contract.ENCRYPTED_PREFIX + encoded
 
-def decrypt(payload: str, password: str) -> str:
+def decrypt(payload: str, credential: str) -> str:
     """Decrypt an envelope produced by this module or by the PHP shell."""
     if not payload.startswith(contract.ENCRYPTED_PREFIX):
         raise ValueError("not an encrypted payload")
@@ -68,7 +76,7 @@ def decrypt(payload: str, password: str) -> str:
     if len(raw) < (contract.NONCE_BYTES + contract.MAC_BYTES):
         raise ValueError("encrypted payload too short")
 
-    encKey, macKey = _keys(password)
+    encKey, macKey = _keys(credential)
     
     nonce = raw[:contract.NONCE_BYTES]
     tag = raw[-contract.MAC_BYTES:]

@@ -41,9 +41,9 @@ def _context(spec: WebShellSpec) -> dict[str, str]:
     if spec.mode == "plain":
         auth_block = "$__ss_ok = true;"
     elif spec.mode == "auth":
-        auth_block = auth.guard(spec.vector, auth.secret_hash(spec.secret))
+        auth_block = auth.guard(spec.vector, auth.credential_hash(spec.secret))
     else:  # "encrypted": auth is mandatory, and both directions are encrypted
-        auth_block = auth.guard(spec.vector, auth.secret_hash(spec.secret))
+        auth_block = auth.guard(spec.vector, auth.credential_hash(spec.secret))
         crypto_helpers = crypto.php_helpers()
         decrypt_block = crypto.decrypt_block()
         output_expr = crypto.encrypt_expr()

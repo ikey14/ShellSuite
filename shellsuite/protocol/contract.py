@@ -36,6 +36,9 @@ AUTH_PARAM_NAMES: dict[str, str] = {
 # applies urldecode() before using them.
 TRANSPORT_ENCODING = "url"
 
+# --- Auth stuff (mode == "auth" or "encrypted")
+AUTH_LABEL = b"ss-auth"
+
 # --- Payload encryption (mode == "encrypted") ------------------------------
 
 ENCRYPTION = "xor-hmac-sha256"

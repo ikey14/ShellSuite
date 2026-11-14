@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 
+from shellsuite.crypto import getCredential
 from shellsuite.protocol import contract
 
 from . import readers
@@ -16,9 +17,9 @@ from . import readers
 ALGORITHM = "sha256"
 
 
-def secret_hash(secret: str) -> str:
-    """SHA-256 hex digest of the password, as embedded in the webshell."""
-    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+def credential_hash(secret: str) -> str:
+    """SHA-256 hex digest of an hmac of the password, as embedded in the webshell."""
+    return hashlib.sha256(getCredential(secret).encode("utf-8")).hexdigest()
 
 
 def guard(vector: str, expected_hash: str) -> str:
