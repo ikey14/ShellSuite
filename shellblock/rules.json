@@ -1,0 +1,10 @@
+{
+    "categories": [
+        "hidden_payload",
+        "code_execution",
+        "obfuscation",
+        "identity",
+        "network",
+        "metadata"
+    ]
+}
