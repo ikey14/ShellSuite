@@ -632,3 +632,20 @@ What was tested:
 - Checked Markdown fences are balanced (72 fences, 456 lines) and `git diff --check` reports no whitespace errors.
 - Verified the installed entry point prints `shellsuite 0.1.0`.
 - Command examples were cross-checked against the CLI help output.
+
+[2026-11-17 15:33] Task: move filter logic to shellsuite/filters.py (AGENTS.md section 3).
+
+What was done:
+- Created `shellsuite/filters.py` with `FILTER_OPS`, `FilterError`, `parse()` and `matches()` moved verbatim from `shellshock/manager/filters.py`; docstring now names both modules.
+- Reduced `shellshock/manager/filters.py` to a single re-export line, so `registry.py`, `sessions.py`, the GUI panels and `tests/test_filters.py` keep importing the same module untouched.
+- No caller changed; `shellblock` will import `shellsuite.filters` directly in new code.
+
+What was tested:
+- `python -m unittest tests.test_filters -v` -> 6 tests, OK.
+- `python -m unittest discover -s tests` -> 158 tests, 4 failures + 3 errors, identical to the pre-existing ShellShock set (test_crypto x3, test_creator x1, test_manager_client x3).
+- `shellsuite shock manage list shells --filter "mode == plain"` -> filtered listing printed.
+- `shellsuite block --help` -> subcommand still registered.
+- Searched `shellsuite/` for `shellshock`: only strings/docstrings (`config.MODULE_NAMES`, protocol channel names), no imports.
+
+Notes:
+- Editable install needs no reinstall: `shellsuite/` package was already mapped.
