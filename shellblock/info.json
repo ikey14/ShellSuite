@@ -1,0 +1,7 @@
+{
+    "magicNumbers":{
+    "jpeg": {"offset": 0, "magic": ["ffd8ff"]},
+    "png": {"offset": 0, "magic": ["89504e470d0a1a0a"]},
+    "php": {"offset": 0, "magic": ["3c3f"]}
+    }
+}
