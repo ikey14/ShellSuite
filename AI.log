@@ -649,3 +649,16 @@ What was tested:
 
 Notes:
 - Editable install needs no reinstall: `shellsuite/` package was already mapped.
+
+[2026-11-18 13:53] Task: add shellblock/helpers/jsonLoader.py and fix JSON loading paths.
+
+What was done:
+- Created `shellblock/helpers/__init__.py` and `shellblock/helpers/jsonLoader.py` with `load_json(name)`: resolves relative names against the `shellblock/` package root (so `info.json`/`rules.json` no longer depend on the working directory), opens with a context manager and UTF-8.
+- `detect.py` still uses `json.load(open("./info.json"))`; not changed, the helper is ready to replace it.
+
+What was tested:
+- `pip install -e .` after the new package; `shellsuite block --help` still lists the `block` subcommand.
+- From `C:\Users\<user>\Downloads`: `load_json('info.json')['extensions']['php']` -> `['php3', 'php4', 'php4', 'php5', 'php7']`; `load_json('rules.json')` returns the categories list.
+
+Notes:
+- `pyproject.toml` package-data has no `"shellblock" = ["*.json"]` entry yet; needed for non-editable installs to ship `info.json`/`rules.json`.

@@ -1,7 +1,14 @@
 {
-    "magicNumbers":{
-    "jpeg": {"offset": 0, "magic": ["ffd8ff"]},
-    "png": {"offset": 0, "magic": ["89504e470d0a1a0a"]},
-    "php": {"offset": 0, "magic": ["3c3f"]}
+    "magicNumbers":[
+    {"type": "jpeg", "offset": 0, "magic": ["ffd8ff"]},
+    {"type": "png", "offset": 0, "magic": ["89504e470d0a1a0a"]},
+    {"type": "php", "offset": 0, "magic": ["3c3f"]}
+    ],
+    "extensions":{
+    "jpeg":["jpeg", "jpg"],
+    "png":["png"],
+    "gif":["gif"],
+    "php":["php", "php3", "php4", "php5", "php7"],
+    "pcap":["pcap"]
     }
 }

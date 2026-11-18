@@ -1,34 +1,42 @@
 """In charge of detecting the magic numbers of a given file and comparing them 
 against the file type they claim to be in their extension"""
 
-# _magicNumbers = {
-#     "jpeg":"ffd8ff",
-#     "png": "89504e470d0a1a0a",
-#     "php":"3c3f",
-# }
+from pathlib import Path
 
-_extensions = {
-    "jpeg":["jpeg", "jpg"],
-    "png":["png"],
-    "gif":["gif"],
-    "php":["php3","php4", "php4", "php5", "php7"],
-    "pcap":["pcap"]
-}
+from shellblock.helpers.jsonLoader import load_json
 
-def FindMagic(filePath: str):
+data = load_json("info.json")
+_magicNumbers = data["magicNumbers"]
+_extensions = data["extensions"]
+
+def FindMagic(filePath: str) -> tuple[str, str, bool]:
     '''Finds the magic numbers for the file in the given filepath'''
     susFile = open(filePath, "rb")
-    susFile.seek(0)
+    matchedType = ""
+    matchedTypeExts = ""
+    magExtMatch = True
+    fileExt = Path(filePath).suffix.lstrip(".").lower()
+    print(f"File Extension: {fileExt}")
 
-    firstBytes = susFile.read(32)
-    hexFirstBytes = firstBytes.hex()
+    for ext in _magicNumbers:
+        for magic in ext["magic"]:
+            susFile.seek(ext["offset"])
+            #Because magic is char representation of hex, 1 hex = 8 bytes = 2 chars, so len must be half
+            magLen = len(magic) // 2
 
-    # print(f"jpeg magic: {_magicNumbers.get("jpeg")}")
-    # print(f"first 32 bytes in hex: {hexFirstBytes}")
-    for i in _magicNumbers.keys():
-        #n for the index where it is found, -1 if it ain't found
-        foundMagic = hexFirstBytes.find(_magicNumbers.get(i))
-        # print(f"found magic hex for {_magicNumbers[i]}: {foundMagic}")
+            if susFile.read(magLen).hex() == magic:
+                # print(f"Match found, {ext['type']} magic present")
+                matchedType = ext["type"]
+                matchedTypeExts = _extensions[matchedType]
+
+                if fileExt not in matchedTypeExts:
+                    magExtMatch = False
+
+                susFile.close()
+                return matchedType, fileExt, magExtMatch
 
 
-FindMagic("C:/Users/ikeum/Downloads/WhatsApp Image 2026-11-16 at 16.09.30.jpeg")
+# magType, fileExt, trueFile = FindMagic("C:/Users/ikeum/Downloads/WhatsApp Image 2026-11-16 at 16.09.30.jpeg")
+# print(f"magicType: {magType}, fileExtension: {fileExt}, magic corroborates extension: {trueFile}")
+# magType, fileExt, trueFile = FindMagic("C:/Users/ikeum/Downloads/BLE_Packet.png")
+# print(f"magicType: {magType}, fileExtension: {fileExt}, magic corroborates extension: {trueFile}")

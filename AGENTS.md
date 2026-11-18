@@ -564,7 +564,7 @@ Self-validation before handing anything over:
 
 Style:
 
-- Identifiers in **English**, comments and docstrings in **Spanish**.
+- Identifiers in **English**
 - Compact, readable files; keep type annotations.
 - No defensive scaffolding nobody asked for (no import fallbacks, no type guards).
 - Do not refactor modules unrelated to the task.
