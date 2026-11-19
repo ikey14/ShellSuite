@@ -53,3 +53,9 @@ def sessions_dir() -> Path:
     except OSError:
         pass
     return directory
+
+def analysis_dir() -> Path:
+    """Directory holding per-file analysis results and scores."""
+    directory = data_dir() / "analysis"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory

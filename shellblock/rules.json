@@ -23,7 +23,7 @@
         },
         {
             "id": "SIG_PHP_SINK_NAME",
-            "kind": "structural",
+            "kind": "signature",
             "title": "Execution sink call",
             "category": "code_execution",
             "points": 0,

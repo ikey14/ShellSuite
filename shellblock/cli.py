@@ -7,17 +7,14 @@ import json
 import sys
 from pathlib import Path
 
+from shellblock import pipeline, store
+from shellblock.result import Result
+
 from shellblock.rules import LoadRules, ValidateRules
 from shellsuite import config
 
 # The word the user types after `shellsuite` (the package is still `shellshock`).
 COMMAND = "block"
-
-def _CmdTest(args: argparse.Namespace):
-    if(args.serious):
-        print("Here to establish cli file")
-    else:
-        print("Testing")
 
 def _CmdRules(args: argparse.Namespace) -> int:
     if args.validate:
@@ -40,17 +37,62 @@ def _CmdRules(args: argparse.Namespace) -> int:
         print(f"{rule['id']} ({rule['kind']}): {rule['title']}")
     return 0
 
+
+def _CmdAnalyze(args: argparse.Namespace) -> int:
+    path = Path(args.file).expanduser()
+
+    if not path.is_file():
+        print(f"error: no such file: {path}", file=sys.stderr)
+        return 2
+    
+    result = pipeline.analyze(path, max_size=args.max_size * 1024 * 1024)
+    saved = store.write_result(result)
+    
+    if args.json:
+        print(result.to_json())
+        return 0
+    
+    _PrintSummary(result, saved)
+    return 0
+
+
+def _PrintSummary(result: Result, saved: Path) -> None:
+    target = result.target
+    suffix = " (truncated)" if target["truncated"] else ""
+
+    print(f"{target['name']}: {target['detected_type']}, {target['size']} bytes{suffix}")
+    
+    if target["type_mismatch"]:
+        print(f"  extension .{target['extension']} contradicts the magic bytes")
+    
+    if not result.findings:
+        print("  no findings")
+    
+    for finding in result.findings:
+        offset = finding.location.get("offset", 0)
+        print(f"  {finding.rule_id:<22} @{offset:<7} {finding.evidence}")
+    
+    for note in result.notes:
+        print(f"note: {note}", file=sys.stderr)
+    
+    print(f"result: {saved}")
+
+
 def register_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(COMMAND, help="webshell detection and risk scoring")
     actions = parser.add_subparsers(dest="action", metavar="<action>")
-
-    
-    test = actions.add_parser("test", help = "Don't worry, I won't be here for long")
-    test.add_argument("--serious", action = "store_true", help = "A bit more serious")
-    test.set_defaults(handler = _CmdTest)
 
     rules = actions.add_parser("rules", help = "list the rules applied on analysis")
     rules.add_argument("--validate", action = "store_true", help = "validate the rules")
     rules.add_argument("--json", action = "store_true", help = "machine-readable JSON")
     rules.set_defaults(handler = _CmdRules)
+
+    analyze = actions.add_parser("analyze", help="analyse one file and write its result")
+    analyze.add_argument("--file", required=True, help="file to analyse")
+    analyze.add_argument("--json", action="store_true", help="print the result JSON")
+    analyze.add_argument(
+        "--max-size", type=int, default=64, metavar="MB",
+        help="read at most MB megabytes (default 64)",
+    )
+    analyze.set_defaults(handler = _CmdAnalyze)
 

@@ -726,3 +726,29 @@ What was tested:
 Notes:
 - `_CmdRules` returns an exit code now, so `shellsuite block rules` follows the 0/1 contract.
 - Structural validation is dormant until structural rules and DETECTORS entries exist.
+
+[2026-11-19 19:37] Task: signature matcher, analysis pipeline and result store; `block analyze` wired.
+What was done:
+- `shellblock/analyze/signatures.py`: one matcher for every `kind: signature` rule. `run_signatures(buffer, rules)` picks the haystack from `scope` (raw bytes, or a latin-1 decode where one character is exactly one byte, so offsets stay byte offsets), compiles each pattern with the same encoding the validator used (bytes + ASCII, text + IGNORECASE), caches compiled patterns by `(scope, pattern)`, and emits one `Finding` per match: subject `file`, `location.kind=byte_offset`, evidence through `escape_evidence`, `detail={scope, length}`. No per-rule Python, no sorting, no counters.
+- `shellblock/rules.py`: added `signature_rules(detected_type)` - the `kind == signature` + `applies_to` filter the matcher consumes.
+- `shellblock/pipeline.py`: `analyze(path, max_size=64 MB) -> Result`. detect -> one capped read -> signature stage -> sorted findings. It owns the two `Stage` timings (`detect`; `signature` with `rules`/`matched`), the `target` dict (path, name, size from `Detection`, sha256 of the analyzed buffer, extension, detected_type, type_mismatch, UTC `analyzed_at`, `truncated`), the truncation note and the contract ordering (`sort_key` + the `rule_id -> category` map). It writes nothing.
+- `shellblock/store.py`: `result_path(name)` -> `<analysis>/<name>_result.json` (extension kept), `write_result(result) -> Path`, and `_write_atomic` (mkstemp in the target directory + `os.replace`, temp file removed on any exception).
+- `shellsuite/config.py`: `analysis_dir()` as specified in AGENTS section 3.
+- `shellblock/cli.py`: `block analyze --file ... [--json] [--max-size MB]` analyzes, stores and prints either a summary or the result JSON; `--max-size` is megabytes, missing file exits 2.
+- `shellblock/rules.json`: `SIG_PHP_SINK_NAME` was `kind: structural`; corrected to `signature`. The validator was red on it and the signature filter would have skipped the rule permanently.
+What was tested:
+- `shellsuite block analyze --file photo.jpg` (jpeg magic + `<?php system($_GET['c']); ?>` + a `c99shell` tail): 4 findings at offsets 24/30/37/60, `rules=4 matched=4`, exit 0.
+- `shell.php` (`eval($_POST['x'])` + a 160-char base64 literal): 4 findings (SIG_PHP_SINK_NAME @6, SIG_PHP_SUPERGLOBAL @11, SIG_PHP_DECODER @30, SIG_BASE64_BLOB @45 with evidence cut at exactly 120 chars), `rules=7 matched=4`.
+- Clean synthetic jpeg: `matched=0`.
+- `--json` parses (`json.load` -> 4 findings) and two runs on the same file are byte-identical (1836 bytes).
+- `--max-size 1` on a 2 MB file: `truncated=true`, `size` still 2097172, note `file truncated at 1048576 bytes (sha256 covers the analyzed prefix)`, exit 0, the PHP at the tail not reported - the cap doing its job.
+- `block analyze --file nope.jpg`: `error: no such file` on stderr, exit 2.
+- `block rules --validate`: `rules.json OK`, exit 0 (first green run; the SIG_PHP_SINK_NAME fix was required).
+- Results landed in `$SHELLSUITE_HOME/analysis/{photo.jpg,shell.php,large.jpg}_result.json`.
+- `python -m unittest discover -s tests`: 158 tests, same pre-existing 4 failures + 3 errors as the two previous entries (test_crypto x3, test_creator x1, test_manager_client x3); nothing new.
+Notes:
+- Only `detect` and `signature` are emitted; the `static` stage joins when `image_static`/`php_static` exist rather than shipping a fake `skipped`.
+- `sha256` covers the analyzed prefix when the file is capped and `notes[]` says so; hashing the whole file would contradict `--max-size`.
+- `matched` counts distinct rule ids, not findings.
+- `signature_rules()` re-reads `rules.json` and the pipeline rebuilds the id->category map, so one analysis reads the table twice. Cheap now; cache it when `capture_static` starts recursing per carved upload.
+- `--max-size` is not validated: argparse accepts 0 or a negative MB value.

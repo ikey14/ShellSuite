@@ -32,6 +32,15 @@ def LoadRules() -> list[dict]:
     return load_json("rules.json")["rules"]
 
 
+def signature_rules(detected_type: str) -> list[dict]:
+    """Las reglas de firma cuyo ``applies_to`` cubre el tipo detectado."""
+    return [
+        rule
+        for rule in LoadRules()
+        if rule.get("kind") == "signature"
+        and detected_type in rule.get("applies_to", ())
+    ]
+
 def ValidateRules(data: dict | None = None) -> list[str]:
     """Validate the rule table; return the errors (empty means valid)."""
     if data is None:
