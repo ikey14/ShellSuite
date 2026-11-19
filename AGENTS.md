@@ -220,7 +220,7 @@ DETECTORS = {
    not compile;
 4. `structural` with no `DETECTORS` entry (defined, never implemented);
 5. a `DETECTORS` entry with no `structural` rule (implemented, never weighted);
-6. a `points: 0` rule not marked as a gate;
+6. a `points: 0` rule not marked as a signature;
 7. a result file that emits a `rule_id` the table does not declare, or whose
    `ruleset` does not match.
 

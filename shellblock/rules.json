@@ -1,10 +1,145 @@
 {
-    "categories": [
-        "hidden_payload",
-        "code_execution",
-        "obfuscation",
-        "identity",
-        "network",
-        "metadata"
+    "version": "2026-11-19",
+    "categories": {
+        "hidden_payload": "code or markup hidden inside a non-code container",
+        "code_execution": "code or command execution reachable from request input",
+        "obfuscation": "encoded, layered or padded payload",
+        "identity": "the file is not what it claims to be",
+        "network": "upload or command traffic inside a capture",
+        "metadata": "shape and statistics of the file itself"
+    },
+    "rules": [
+        {
+            "id": "SIG_PHP_TAG",
+            "kind": "signature",
+            "title": "PHP open tag",
+            "category": "hidden_payload",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["jpeg", "png", "gif", "unknown"],
+            "scope": "bytes",
+            "pattern": "<\\?(php|=|\\s)",
+            "rationale": "Gate only: a PHP tag inside a container that should not hold PHP unlocks the hidden-payload rules."
+        },
+        {
+            "id": "SIG_PHP_SINK_NAME",
+            "kind": "structural",
+            "title": "Execution sink call",
+            "category": "code_execution",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "jpeg", "png", "gif", "unknown"],
+            "scope": "text",
+            "pattern": "\\b(eval|assert|system|exec|shell_exec|passthru|popen|proc_open|call_user_func|create_function)\\s*\\(",
+            "rationale": "Gate only: a call to a function that executes code or commands is the trigger for the sink rules."
+        },
+        {
+            "id": "SIG_PHP_SUPERGLOBAL",
+            "kind": "signature",
+            "title": "Request superglobal read",
+            "category": "code_execution",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "jpeg", "png", "gif", "unknown"],
+            "scope": "text",
+            "pattern": "\\$_(GET|POST|REQUEST|COOKIE|FILES|SERVER)\\b",
+            "rationale": "Gate only: reading request input is what turns a sink into an input-fed sink."
+        },
+        {
+            "id": "SIG_PHP_DECODER",
+            "kind": "signature",
+            "title": "Decoder call",
+            "category": "obfuscation",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "unknown"],
+            "scope": "text",
+            "pattern": "\\b(base64_decode|gzinflate|gzuncompress|gzdecode|str_rot13|hex2bin|urldecode)\\s*\\(",
+            "rationale": "Gate only: a decoder call is the trigger for the obfuscation ladder."
+        },
+        {
+            "id": "SIG_BASE64_BLOB",
+            "kind": "signature",
+            "title": "Large base64 literal",
+            "category": "obfuscation",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "unknown"],
+            "scope": "bytes",
+            "pattern": "[A-Za-z0-9+/]{120,}={0,2}",
+            "rationale": "Gate only: a long base64 literal suggests a packed payload; the weight belongs to the structural rules."
+        },
+        {
+            "id": "SIG_SHELL_FAMILY",
+            "kind": "signature",
+            "title": "Known webshell family fingerprint",
+            "category": "identity",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "jpeg", "png", "gif", "unknown"],
+            "scope": "text",
+            "pattern": "(c99shell|r57shell|b374k|WSO [0-9]|P\\.A\\.S\\.|@eval\\s*\\(\\s*\\$_POST\\[)",
+            "rationale": "Gate only: a family fingerprint unlocks PHP_KNOWN_FAMILY with the matching context."
+        },
+        {
+            "id": "SIG_SS_PARAM",
+            "kind": "signature",
+            "title": "ShellShock channel parameter",
+            "category": "metadata",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "pcap"],
+            "scope": "text",
+            "pattern": "(shellshock_auth|shellshock|X-ShellShock(-Auth)?)",
+            "rationale": "Gate only: ShellShock's channel names link a PHP shell or a capture to the frozen protocol contract."
+        },
+        {
+            "id": "SIG_SS_ENVELOPE",
+            "kind": "signature",
+            "title": "ShellShock encrypted envelope",
+            "category": "obfuscation",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "unknown", "pcap", "upload"],
+            "scope": "bytes",
+            "pattern": "SSENC",
+            "rationale": "Gate only: the SSENC prefix proves an encrypted ShellShock payload without decrypting it."
+        },
+        {
+            "id": "SIG_SS_RESPONSE",
+            "kind": "signature",
+            "title": "ShellShock response framing",
+            "category": "network",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["pcap", "upload"],
+            "scope": "bytes",
+            "pattern": "<!--SS[BE]-->",
+            "rationale": "Gate only: ShellShock's response framing identifies its output inside a carved body."
+        },
+        {
+            "id": "SIG_UPLOAD_PART",
+            "kind": "signature",
+            "title": "PHP upload part",
+            "category": "network",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["pcap", "upload"],
+            "scope": "text",
+            "pattern": "filename=[\"']?[^\"';]+\\.(php[0-9]?|phtml|phar)",
+            "rationale": "Gate only: a .php/.phtml/.phar filename in a multipart part unlocks the upload rules."
+        },
+        {
+            "id": "SIG_HTTP_PHP_URI",
+            "kind": "signature",
+            "title": "HTTP request to a PHP script",
+            "category": "network",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["pcap"],
+            "scope": "bytes",
+            "pattern": "(GET|POST|HEAD) [^ ]*\\.php[? ]",
+            "rationale": "Gate only: an HTTP request targeting a .php script unlocks the command-parameter rule."
+        }
     ]
 }

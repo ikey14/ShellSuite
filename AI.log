@@ -679,3 +679,50 @@ What was tested:
 
 Notes:
 - Windows Defender blocks reading a temp `.php` file containing `system($_GET[...])` (`OSError: [Errno 22]`); the webshell-pattern checks were run with benign `echo` bodies. Real fixtures may need a Defender exclusion when testing locally.
+
+[2026-11-19 13:18] Task: upgrade rules.json to the section 6.1 shape with the signature (gate) rules.
+
+What was done:
+- `shellblock/rules.json`: added `version` (2026-11-19) and the `categories` object with the six ids/descriptions from section 6.1.
+- Added the 11 signature rules transcribed from section 6.3 (SIG_PHP_TAG, SIG_PHP_SINK_NAME, SIG_PHP_SUPERGLOBAL, SIG_PHP_DECODER, SIG_BASE64_BLOB, SIG_SHELL_FAMILY, SIG_SS_PARAM, SIG_SS_ENVELOPE, SIG_SS_RESPONSE, SIG_UPLOAD_PART, SIG_HTTP_PHP_URI), each `kind: signature`, `points: 0`, `severity: info`, with `scope`, exact `pattern`, `applies_to` and a rationale naming the rules it gates.
+- No structural rules yet; no detector logic added.
+
+What was tested:
+- Throwaway validator: JSON loads, version present, 11 unique ids matching the section 6.3 set, all points 0, every category present in `categories`, every `applies_to` value in {jpeg, png, gif, php, pcap, upload, unknown}, every pattern compiles (text with re.IGNORECASE, bytes case-sensitive).
+- Each pattern matched a realistic sample: `<?php`, `system(`, `$_POST`, `gzinflate(`, a 120-char base64 run, `@eval($_POST[`, `shellshock_auth`, `SSENC`, `<!--SSB-->`, `filename="shell.php"`, `GET /uploads/shell.php?cmd=id`.
+- `shellsuite block --help` -> exit 0.
+
+Notes:
+- Pattern strings are the literal ones from section 6.3; SIG_PHP_TAG fires on `<?php`, `<?=` and `<? `.
+- `block rules --validate` does not exist yet (rules.py pending), so validation was done with a temporary script, not the CLI.
+
+[2026-11-19 17:11] Task: create shellblock/result.py (Contract A dataclasses, evidence escaping, sort key).
+
+What was done:
+- `shellblock/result.py`: `escape_evidence(raw)` (0x20-0x7E kept, the rest as `\xNN`, hard 120-character cap counting escapes), frozen `Finding` (rule_id, subject, severity, location, evidence, detail) with `to_dict`, `sort_key(finding, category)` -> (category, location.offset|0, rule_id), frozen `Stage` that omits unused counters, and `Result` with `to_dict`/`to_json` (schema 1, tool shellblock/0.1.0).
+- No file I/O and no import of `rules.py`; `store.py` will own writing, the pipeline will sort before building the result.
+
+What was tested:
+- Throwaway script: printable and binary evidence -> `<?php system($_GET['c']); ?>` and `<?php\x00\xff\x7f ok`; 200 NUL bytes and 200 ASCII chars both cap at exactly 120 characters.
+- `sort_key` with offset 42/7 and with a location lacking `offset` (falls back to 0).
+- `Result.to_json()` -> JSON keys in contract order (schema, tool, target, stages, findings, notes, errors), tool `{shellblock, 0.1.0}`, detect stage without counters, signature stage with `rules`/`matched`.
+- Two `to_json()` calls on the same Result are byte-identical; `json.loads` round-trips.
+
+Notes:
+- `detail` is always emitted (`{}` for gate findings); evidence hex is lowercase.
+
+[2026-11-19 17:59] Task: implement rules.py loading/validation and wire block rules --validate/--json.
+
+What was done:
+- `shellblock/rules.py`: kept `LoadRules()`, added `ValidateRules(data=None) -> list[str]` with table-level checks (object, version, categories mapping, rules list) and per-rule checks: empty/duplicate id, kind in {signature, structural}, required fields per kind, category exists, integer points >= 0 with points 0 reserved for signature rules (per the updated AGENTS.md item 6), applies_to a non-empty list of known types (pcapng included), and signature scope/pattern compiled exactly as the matcher will (bytes+ASCII, text+IGNORECASE). DETECTORS is cross-checked both ways. Helpers `_is_type_list` and `_compile_problem` keep it testable.
+- `shellblock/cli.py`: `_CmdRules` now takes `ValidateRules()`'s error list, prints `error: ...` to stderr and exits 1 on failure, `rules.json OK` on success; added `--json` (`{"valid", "errors"}` for validation, `{"rules": [...]}` for listing); listing prints `id (kind): title`.
+
+What was tested:
+- `shellsuite block rules --validate` -> `rules.json OK`, exit 0; `--validate --json` -> `{"valid": true, "errors": []}`.
+- Synthetic bad tables through `ValidateRules(data)`: no version, categories as list, rules not a list, missing/unknown kind, empty/missing/duplicate id, unknown category, negative and bool points, structural with points 0, bad/empty applies_to, bad scope, bad regex, non-ASCII bytes pattern, missing pattern, missing structural fields - each produced the expected error.
+- `ValidateRules([])` and `ValidateRules("x")` -> `table: the top level must be a JSON object`.
+- `python -m unittest discover -s tests` -> 158 tests, same pre-existing 4 failures + 3 errors.
+
+Notes:
+- `_CmdRules` returns an exit code now, so `shellsuite block rules` follows the 0/1 contract.
+- Structural validation is dormant until structural rules and DETECTORS entries exist.
