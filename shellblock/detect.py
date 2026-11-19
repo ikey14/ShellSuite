@@ -1,42 +1,66 @@
-"""In charge of detecting the magic numbers of a given file and comparing them 
-against the file type they claim to be in their extension"""
+"""Type detection: magic bytes versus the extension a file claims."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
 
 from shellblock.helpers.jsonLoader import load_json
 
-data = load_json("info.json")
-_magicNumbers = data["magicNumbers"]
-_extensions = data["extensions"]
-
-def FindMagic(filePath: str) -> tuple[str, str, bool]:
-    '''Finds the magic numbers for the file in the given filepath'''
-    susFile = open(filePath, "rb")
-    matchedType = ""
-    matchedTypeExts = ""
-    magExtMatch = True
-    fileExt = Path(filePath).suffix.lstrip(".").lower()
-    print(f"File Extension: {fileExt}")
-
-    for ext in _magicNumbers:
-        for magic in ext["magic"]:
-            susFile.seek(ext["offset"])
-            #Because magic is char representation of hex, 1 hex = 8 bytes = 2 chars, so len must be half
-            magLen = len(magic) // 2
-
-            if susFile.read(magLen).hex() == magic:
-                # print(f"Match found, {ext['type']} magic present")
-                matchedType = ext["type"]
-                matchedTypeExts = _extensions[matchedType]
-
-                if fileExt not in matchedTypeExts:
-                    magExtMatch = False
-
-                susFile.close()
-                return matchedType, fileExt, magExtMatch
+_INFO = load_json("info.json")
+_MAGIC_ENTRIES: list[dict] = _INFO["magicNumbers"]
+_EXTENSIONS: dict[str, list[str]] = _INFO["extensions"]
+_EXTENSION_TYPES: dict[str, str] = {
+    extension: type_name
+    for type_name, extensions in _EXTENSIONS.items()
+    for extension in extensions
+}
+_HEADER_BYTES = max(
+    entry["offset"] + max(len(pattern) // 2 for pattern in entry["magic"])
+    for entry in _MAGIC_ENTRIES
+)
 
 
-# magType, fileExt, trueFile = FindMagic("C:/Users/ikeum/Downloads/WhatsApp Image 2026-11-16 at 16.09.30.jpeg")
-# print(f"magicType: {magType}, fileExtension: {fileExt}, magic corroborates extension: {trueFile}")
-# magType, fileExt, trueFile = FindMagic("C:/Users/ikeum/Downloads/BLE_Packet.png")
-# print(f"magicType: {magType}, fileExtension: {fileExt}, magic corroborates extension: {trueFile}")
+@dataclass(frozen=True)
+class Detection:
+    """Facts the detect stage reports; findings belong to the rules stage."""
+
+    extension: str
+    extension_type: str
+    detected_type: str
+    type_mismatch: bool
+    size: int
+
+
+def detect(path: Path) -> Detection:
+    """Return the claimed type, the detected type and the mismatch fact."""
+    header = _read_header(path)
+    extension = path.suffix.lower().lstrip(".")
+    extension_type = _EXTENSION_TYPES.get(extension, "unknown")
+    detected_type = _match_magic(header)
+    if detected_type == "unknown" and extension_type == "php":
+        detected_type = "php"
+    return Detection(
+        extension=extension,
+        extension_type=extension_type,
+        detected_type=detected_type,
+        type_mismatch=(
+            extension_type != "unknown" and detected_type != extension_type
+        ),
+        size=path.stat().st_size,
+    )
+
+
+def _read_header(path: Path) -> bytes:
+    with path.open("rb") as handle:
+        return handle.read(_HEADER_BYTES)
+
+
+def _match_magic(header: bytes) -> str:
+    for entry in _MAGIC_ENTRIES:
+        start = entry["offset"]
+        for pattern in entry["magic"]:
+            length = len(pattern) // 2
+            if header[start : start + length].hex() == pattern.lower():
+                return entry["type"]
+    return "unknown"

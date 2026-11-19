@@ -662,3 +662,20 @@ What was tested:
 
 Notes:
 - `pyproject.toml` package-data has no `"shellblock" = ["*.json"]` entry yet; needed for non-editable installs to ship `info.json`/`rules.json`.
+
+[2026-11-19 12:09] Task: rewrite detect.py as a pure detect stage and complete the type table.
+
+What was done:
+- `shellblock/detect.py`: `detect(path)` returns a frozen `Detection(extension, extension_type, detected_type, type_mismatch, size)`; bounded header read with `with`, `unknown` fallback, reverse ext->type map, mismatch only when the extension claims a known type and the magic differs.
+- PHP is gated by its magic `3c3f706870` (`<?php`) instead of `3c3f`; a php-ish extension with no binary magic still types as `php` so padded/BOM/HTML-first files stay analyzable.
+- `shellblock/info.json`: added GIF (87a/89a), pcap (4 byte orders), pcapng; PHP magic changed to `<?php`; added `phtml` and `pcapng` extensions; removed the duplicate `php4`.
+- `pyproject.toml`: `"shellblock" = ["*.json"]` package-data so `info.json` ships on non-editable installs.
+- Removed import-time demo calls, prints and the leaked file handle.
+
+What was tested:
+- Reinstalled (`pip install -e .`); `shellsuite block --help` still registers.
+- Synthetic corpus via `detect()`: jpg/png/gif87/gif89/pcap/pcapng clean -> mismatch=False; PNG as .jpg -> mismatch=True; `.php` with `<?php`, short tag, 2 KB padding and BOM -> php, no mismatch; `<?php` bytes as .jpg -> detected php + mismatch; `.txt` with PNG bytes and extensionless JPEG -> mismatch=False.
+- `python -m unittest discover -s tests` -> 158 tests, same pre-existing 4 failures + 3 errors (test_crypto, test_creator, test_manager_client).
+
+Notes:
+- Windows Defender blocks reading a temp `.php` file containing `system($_GET[...])` (`OSError: [Errno 22]`); the webshell-pattern checks were run with benign `echo` bodies. Real fixtures may need a Defender exclusion when testing locally.

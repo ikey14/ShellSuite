@@ -1,14 +1,16 @@
 {
-    "magicNumbers":[
-    {"type": "jpeg", "offset": 0, "magic": ["ffd8ff"]},
-    {"type": "png", "offset": 0, "magic": ["89504e470d0a1a0a"]},
-    {"type": "php", "offset": 0, "magic": ["3c3f"]}
+    "magicNumbers": [
+        {"type": "jpeg", "offset": 0, "magic": ["ffd8ff"]},
+        {"type": "png", "offset": 0, "magic": ["89504e470d0a1a0a"]},
+        {"type": "gif", "offset": 0, "magic": ["474946383761", "474946383961"]},
+        {"type": "php", "offset": 0, "magic": ["3c3f706870"]},
+        {"type": "pcap", "offset": 0, "magic": ["d4c3b2a1", "a1b2c3d4", "4d3cb2a1", "a1b23c4d"]}
     ],
-    "extensions":{
-    "jpeg":["jpeg", "jpg"],
-    "png":["png"],
-    "gif":["gif"],
-    "php":["php", "php3", "php4", "php5", "php7"],
-    "pcap":["pcap"]
+    "extensions": {
+        "jpeg": ["jpeg", "jpg"],
+        "png": ["png"],
+        "gif": ["gif"],
+        "php": ["php", "php3", "php4", "php5", "php7", "phtml"],
+        "pcap": ["pcap"]
     }
 }
