@@ -70,6 +70,7 @@ def generate(spec: WebShellSpec) -> str:
 
 def write(spec: WebShellSpec, out: Path | None = None) -> Path:
     """Write the webshell to ``out`` (default: ~/.shellsuite/shells/<name>.php)."""
+    # dest = out / f"{spec.name}.php"
     dest = out or (config.shells_dir() / f"{spec.name}.php")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(generate(spec), encoding="utf-8")

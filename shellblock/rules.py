@@ -9,6 +9,8 @@ from shellblock.helpers.jsonLoader import load_json
 # Populated by the static stage: structural rule id -> detector function.
 DETECTORS: dict = {}
 
+_RULES: list = []
+
 _BASE_FIELDS = (
     "id",
     "kind",
@@ -29,7 +31,12 @@ _SCOPES = {"bytes", "text"}
 
 def LoadRules() -> list[dict]:
     """Return the rule entries declared in rules.json."""
-    return load_json("rules.json")["rules"]
+    if not _RULES:
+        rules = load_json("rules.json")["rules"]
+        for rule in rules:
+            _RULES.append(rule)
+    
+    return _RULES
 
 
 def signature_rules(detected_type: str) -> list[dict]:
