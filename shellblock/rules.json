@@ -10,6 +10,76 @@
     },
     "rules": [
         {
+            "id": "IMG_PHP_BEFORE_SOI",
+            "kind": "structural",
+            "title": "PHP before the image signature",
+            "category": "hidden_payload",
+            "points": 50,
+            "severity": "critical",
+            "applies_to": ["php", "jpeg", "png", "gif", "unknown"],
+            "rationale": "Bytes before the image signature mean the file is PHP that carries a picture, not a picture."
+        },
+        {
+            "id": "IMG_HIDDEN_PHP",
+            "kind": "structural",
+            "title": "PHP hidden inside an image",
+            "category": "hidden_payload",
+            "points": 45,
+            "severity": "critical",
+            "applies_to": ["jpeg", "png", "gif", "unknown"],
+            "rationale": "A picture never contains PHP: the metadata segment or the tail carries a payload."
+        },
+        {
+            "id": "IMG_SCRIPT_IN_SEGMENT",
+            "kind": "structural",
+            "title": "Markup in image metadata",
+            "category": "hidden_payload",
+            "points": 20,
+            "severity": "high",
+            "applies_to": ["jpeg", "png", "gif"],
+            "rationale": "Script markup in a metadata segment turns the image into a stored-XSS carrier."
+        },
+        {
+            "id": "IMG_ZIP_AFTER_EOI",
+            "kind": "structural",
+            "title": "ZIP archive after the end of image",
+            "category": "hidden_payload",
+            "points": 35,
+            "severity": "high",
+            "applies_to": ["jpeg", "png", "gif"],
+            "rationale": "A ZIP local header after the image trailer makes the file a PHAR polyglot."
+        },
+        {
+            "id": "IMG_TRAILING_DATA",
+            "kind": "structural",
+            "title": "Data after the end of image",
+            "category": "metadata",
+            "points": 15,
+            "severity": "medium",
+            "applies_to": ["jpeg", "png", "gif"],
+            "rationale": "Non-image bytes after the trailer are suspicious even when they are not code; the specific rule wins when they are."
+        },
+        {
+            "id": "TYPE_MAGIC_MISMATCH",
+            "kind": "structural",
+            "title": "Extension does not match the magic bytes",
+            "category": "identity",
+            "points": 20,
+            "severity": "medium",
+            "applies_to": ["jpeg", "png", "gif", "php", "pcap", "unknown"],
+            "rationale": "The extension claims one type and the bytes say another: the container is lying about itself."
+        },
+        {
+            "id": "DOUBLE_EXTENSION",
+            "kind": "structural",
+            "title": "Executable double extension",
+            "category": "identity",
+            "points": 10,
+            "severity": "low",
+            "applies_to": ["jpeg", "png", "gif", "php", "unknown"],
+            "rationale": "A name like shell.php.jpg targets servers that resolve the last extension but filter on the first."
+        },
+        {
             "id": "SIG_PHP_TAG",
             "kind": "signature",
             "title": "PHP open tag",

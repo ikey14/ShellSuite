@@ -5,10 +5,11 @@ import hashlib
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from shellblock.analyze.context import Context
 from shellblock.analyze.signatures import run_signatures
 from shellblock.detect import detect
 from shellblock.result import Finding, Result, Stage, sort_key
-from shellblock.rules import LoadRules, signature_rules
+from shellblock.rules import DETECTORS, LoadRules, signature_rules, structural_rules
 
 DEFAULT_MAX_SIZE = 64 * 1024 * 1024
 
@@ -32,9 +33,34 @@ def analyze(path: Path, max_size: int = DEFAULT_MAX_SIZE) -> Result:
     started = time.perf_counter()
     findings = run_signatures(buffer, rules)
     signature_ms = _elapsed(started)
+    signature_matched = len({finding.rule_id for finding in findings})
 
+    static_set = structural_rules(detection.detected_type)
+    context = Context(buffer=buffer, detection=detection, path=path)
+    started = time.perf_counter()
+    static_findings = [
+        finding
+        for rule in static_set
+        for finding in DETECTORS[rule["id"]](context, rule)
+    ]
+    static_ms = _elapsed(started)
+    
+    findings.extend(static_findings)
     _sort(findings)
-    matched = len({finding.rule_id for finding in findings})
+    
+    static_stage = (
+        Stage(
+            "static",
+            "ok",
+            static_ms,
+            rules=len(static_set),
+            matched=len({finding.rule_id for finding in static_findings}),
+            units=1,
+        )
+        if static_set
+        else Stage("static", "skipped", static_ms)
+    )
+
 
     return Result(
         target={
@@ -50,10 +76,12 @@ def analyze(path: Path, max_size: int = DEFAULT_MAX_SIZE) -> Result:
         },
         stages=[
             Stage("detect", "ok", detect_ms),
-            Stage("signature", "ok", signature_ms, rules=len(rules), matched=matched),
+            Stage("signature", "ok", signature_ms, rules=len(rules), matched=signature_matched),
+            static_stage
         ],
         findings=findings,
         notes=notes,
+        errors=list(context.errors)
     )
 
 

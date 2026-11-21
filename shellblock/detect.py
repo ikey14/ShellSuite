@@ -19,6 +19,10 @@ _HEADER_BYTES = max(
     entry["offset"] + max(len(pattern) // 2 for pattern in entry["magic"])
     for entry in _MAGIC_ENTRIES
 )
+MAGICS: dict[str, tuple[bytes, ...]] = {
+    entry["type"]: tuple(bytes.fromhex(pattern) for pattern in entry["magic"])
+    for entry in _MAGIC_ENTRIES
+}
 
 
 @dataclass(frozen=True)

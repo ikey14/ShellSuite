@@ -752,3 +752,26 @@ Notes:
 - `matched` counts distinct rule ids, not findings.
 - `signature_rules()` re-reads `rules.json` and the pipeline rebuilds the id->category map, so one analysis reads the table twice. Cheap now; cache it when `capture_static` starts recursing per carved upload.
 - `--max-size` is not validated: argparse accepts 0 or a negative MB value.
+
+[2026-11-21 13:55] Task: image static stage (JPEG/PNG/GIF walkers, 7 structural rules, static stage in the pipeline).
+What was done:
+- `shellblock/analyze/context.py`: `Region(start, end, kind, name)` and `Context(buffer, detection, path, errors, image_regions)`. The context memoises the walk, so the seven rules share one traversal instead of seven.
+- `shellblock/analyze/image_static.py`: three walkers (JPEG markers until SOS then `find` the first EOI; PNG chunk chain until IEND; GIF blocks, extensions and trailer) that only read framing bytes and never decode the image. Regions are `segment` (JPEG COM/APPn, GIF comment), `chunk` (PNG tEXt/iTXt/zTXt), `trailing` (after the trailer) and `prefix` (before the signature).
+- Seven detectors, `(ctx, rule) -> list[Finding]`: `find_php_before_soi`, `find_hidden_php`, `find_script_in_segment`, `find_zip_after_eoi`, `find_trailing_data`, `find_type_mismatch`, `find_double_extension`. Nothing is decided by extension: `find_php_before_soi` looks for the tag and then for image magic after it, so a `.php` file with no picture produces nothing.
+- `shellblock/rules.json`: the seven structural rules from section 6.3 with points 50/45/20/35/15/20/10, severities critical/critical/high/high/medium/medium/low, `applies_to`, and a rationale each.
+- `shellblock/rules.py`: `DETECTORS` populated with the seven detectors; added `structural_rules(detected_type)`, the twin of `signature_rules`.
+- `shellblock/pipeline.py`: third stage. Builds the `Context`, runs every applicable detector, extends `findings`, emits `Stage("static", "ok", ms, rules, matched, units=1)` or `skipped` when no structural rule applies, and copies `context.errors` into `Result.errors`.
+- Evidence is clamped to the region that produced it, so a COM segment yields `<?php system($_GET['c']); ?>` and not 120 bytes of following JPEG data.
+What was tested:
+- `block rules --validate` -> `rules.json OK` (all seven structural ids have a detector and vice versa).
+- Fixture sweep, static stage only: `hidden_comment.jpg` `IMG_HIDDEN_PHP@6` (COM), `hidden_trailing.jpg` `@15437` (trailing), `polyglot.gif` `@9145` (GIF comment), `php_before_soi.jpg` `IMG_PHP_BEFORE_SOI@0` + `TYPE_MAGIC_MISMATCH@0`, `double.php.jpg` `IMG_HIDDEN_PHP@15436` + `DOUBLE_EXTENSION@0`, `fake.jpg` `TYPE_MAGIC_MISMATCH@0` only (no PHP in it), `zip_after_eoi.jpg` `IMG_ZIP_AFTER_EOI@15436`, `script_comment.jpg` `IMG_SCRIPT_IN_SEGMENT@6`, `trailing_text.jpg` `IMG_TRAILING_DATA@15436`.
+- Clean controls: `clean.jpg/png/gif` and a real 640x480 photo from picsum -> 0 findings, 0 errors, `static ok 7/0`.
+- `truncated.jpg` (JPEG cut at 2 KB) -> no traceback, `errors: ["JPEG entropy data without EOI"]`, exit 0.
+- CLI end to end: `block analyze --file hidden_comment.jpg` lists the four findings with offsets and writes the result file.
+- `python -m unittest discover -s tests` -> 158 tests, same pre-existing 4 failures + 3 errors.
+Notes:
+- `location.kind` for a trailing payload is `byte_offset` with `segment: "trailing"`: section 6.3 says `kind=trailing` but invariant 6 does not allow that value, so the label lives in `segment`.
+- Specificity is enforced by `find_trailing_data` skipping tails that are PHP or ZIP, so a payload tail scores 45/35 and not also 15.
+- `php_before_soi.jpg` reports both `IMG_PHP_BEFORE_SOI` and `TYPE_MAGIC_MISMATCH`: two different facts (content position, and extension vs magic), different categories.
+- JPEG EOI is located with `find` after SOS, not `rfind`: valid entropy data byte-stuffs `FF`, so the first `FFD9` is the real trailer, while `rfind` would be fooled by a polyglot tail containing `FFD9`.
+- Walkers are O(number of blocks); the JPEG entropy stream is skipped, not scanned.

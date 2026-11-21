@@ -5,9 +5,18 @@ from __future__ import annotations
 import re
 
 from shellblock.helpers.jsonLoader import load_json
+from shellblock.analyze import image_static
 
 # Populated by the static stage: structural rule id -> detector function.
-DETECTORS: dict = {}
+DETECTORS: dict = {
+    "IMG_PHP_BEFORE_SOI": image_static.find_php_before_soi,
+    "IMG_HIDDEN_PHP": image_static.find_hidden_php,
+    "IMG_SCRIPT_IN_SEGMENT": image_static.find_script_in_segment,
+    "IMG_ZIP_AFTER_EOI": image_static.find_zip_after_eoi,
+    "IMG_TRAILING_DATA": image_static.find_trailing_data,
+    "TYPE_MAGIC_MISMATCH": image_static.find_type_mismatch,
+    "DOUBLE_EXTENSION": image_static.find_double_extension,
+}
 
 _RULES: list = []
 
@@ -45,6 +54,15 @@ def signature_rules(detected_type: str) -> list[dict]:
         rule
         for rule in LoadRules()
         if rule.get("kind") == "signature"
+        and detected_type in rule.get("applies_to", ())
+    ]
+
+def structural_rules(detected_type: str) -> list[dict]:
+    """Las reglas estructurales cuyo ``applies_to`` cubre el tipo detectado."""
+    return [
+        rule
+        for rule in LoadRules()
+        if rule.get("kind") == "structural"
         and detected_type in rule.get("applies_to", ())
     ]
 
