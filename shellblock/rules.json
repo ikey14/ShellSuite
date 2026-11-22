@@ -1,5 +1,5 @@
 {
-    "version": "2026-11-19",
+    "version": "2026-11-22",
     "categories": {
         "hidden_payload": "code or markup hidden inside a non-code container",
         "code_execution": "code or command execution reachable from request input",
@@ -78,6 +78,146 @@
             "severity": "low",
             "applies_to": ["jpeg", "png", "gif", "php", "unknown"],
             "rationale": "A name like shell.php.jpg targets servers that resolve the last extension but filter on the first."
+        },
+        {
+            "id": "PHP_EVAL_OF_INPUT",
+            "kind": "structural",
+            "title": "eval of request input",
+            "category": "code_execution",
+            "points": 60,
+            "severity": "critical",
+            "applies_to": ["php"],
+            "rationale": "eval/assert reached by request input executes attacker-chosen code."
+        },
+        {
+            "id": "PHP_OS_EXEC_OF_INPUT",
+            "kind": "structural",
+            "title": "OS command built from request input",
+            "category": "code_execution",
+            "points": 50,
+            "severity": "critical",
+            "applies_to": ["php"],
+            "rationale": "system/exec family or backticks reached by request input run attacker-chosen commands."
+        },
+        {
+            "id": "PHP_DYNAMIC_CALL_OF_INPUT",
+            "kind": "structural",
+            "title": "Dynamic call built from request input",
+            "category": "code_execution",
+            "points": 50,
+            "severity": "critical",
+            "applies_to": ["php"],
+            "rationale": "call_user_func or a variable function fed by input dispatches to attacker-chosen code."
+        },
+        {
+            "id": "PHP_INCLUDE_OF_INPUT",
+            "kind": "structural",
+            "title": "include/require of request input",
+            "category": "code_execution",
+            "points": 30,
+            "severity": "high",
+            "applies_to": ["php"],
+            "rationale": "An include fed by input enables local or remote file inclusion; also legitimate, hence not proof."
+        },
+        {
+            "id": "PHP_WRITE_OF_INPUT",
+            "kind": "structural",
+            "title": "File write fed by request input",
+            "category": "code_execution",
+            "points": 30,
+            "severity": "high",
+            "applies_to": ["php"],
+            "rationale": "Writing attacker-controlled bytes to disk is a dropper."
+        },
+        {
+            "id": "PHP_OBFUSCATION_LADDER",
+            "kind": "structural",
+            "title": "Nested decode chain",
+            "category": "obfuscation",
+            "points": 30,
+            "severity": "high",
+            "applies_to": ["php"],
+            "rationale": "Two or more decoders nested inside one sink hide the real payload."
+        },
+        {
+            "id": "PHP_KNOWN_FAMILY",
+            "kind": "structural",
+            "title": "Known webshell family",
+            "category": "identity",
+            "points": 35,
+            "severity": "high",
+            "applies_to": ["php"],
+            "rationale": "A family fingerprint (c99, r57, b374k, WSO, P.A.S., China Chopper) identifies the tool."
+        },
+        {
+            "id": "PHP_EXEC_SINK_ONLY",
+            "kind": "structural",
+            "title": "Execution sink without a source",
+            "category": "code_execution",
+            "points": 18,
+            "severity": "medium",
+            "applies_to": ["php"],
+            "rationale": "An execution sink with no traceable input is still suspicious inside a webroot."
+        },
+        {
+            "id": "PHP_AUTH_GATE",
+            "kind": "structural",
+            "title": "Credential gate guarding execution",
+            "category": "metadata",
+            "points": 15,
+            "severity": "medium",
+            "applies_to": ["php"],
+            "rationale": "A hashed credential comparison wired to an execution path is the shape of every ShellShock shell."
+        },
+        {
+            "id": "PHP_REQUEST_HEADER_SOURCE",
+            "kind": "structural",
+            "title": "Request headers read as a source",
+            "category": "metadata",
+            "points": 12,
+            "severity": "medium",
+            "applies_to": ["php"],
+            "rationale": "getallheaders() or HTTP_* reads are the header-vector channel of header-based shells."
+        },
+        {
+            "id": "PHP_BASE64_BLOB",
+            "kind": "structural",
+            "title": "Large base64 literal",
+            "category": "obfuscation",
+            "points": 8,
+            "severity": "low",
+            "applies_to": ["php"],
+            "rationale": "A very long base64 literal usually carries a packed payload."
+        },
+        {
+            "id": "PHP_HIGH_ENTROPY",
+            "kind": "structural",
+            "title": "High-entropy PHP file",
+            "category": "obfuscation",
+            "points": 8,
+            "severity": "low",
+            "applies_to": ["php"],
+            "rationale": "An incompressible window inside PHP suggests encryption or packing; never applied to images."
+        },
+        {
+            "id": "PHP_ONE_LINER",
+            "kind": "structural",
+            "title": "One-line execution shell",
+            "category": "metadata",
+            "points": 10,
+            "severity": "low",
+            "applies_to": ["php"],
+            "rationale": "Three lines or fewer around an execution sink is the classic dropped one-liner."
+        },
+        {
+            "id": "PHP_PADDED_TAG",
+            "kind": "structural",
+            "title": "PHP tag hidden after padding",
+            "category": "obfuscation",
+            "points": 10,
+            "severity": "low",
+            "applies_to": ["php"],
+            "rationale": "A PHP tag after a kilobyte of whitespace evades grep-style inspection."
         },
         {
             "id": "SIG_PHP_TAG",

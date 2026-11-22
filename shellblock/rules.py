@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from shellblock.helpers.jsonLoader import load_json
-from shellblock.analyze import image_static
+from shellblock.analyze import image_static, php_static
 
 # Populated by the static stage: structural rule id -> detector function.
 DETECTORS: dict = {
@@ -16,6 +16,20 @@ DETECTORS: dict = {
     "IMG_TRAILING_DATA": image_static.find_trailing_data,
     "TYPE_MAGIC_MISMATCH": image_static.find_type_mismatch,
     "DOUBLE_EXTENSION": image_static.find_double_extension,
+    "PHP_EVAL_OF_INPUT": php_static.find_eval_of_input,
+    "PHP_OS_EXEC_OF_INPUT": php_static.find_os_exec_of_input,
+    "PHP_DYNAMIC_CALL_OF_INPUT": php_static.find_dynamic_call_of_input,
+    "PHP_INCLUDE_OF_INPUT": php_static.find_include_of_input,
+    "PHP_WRITE_OF_INPUT": php_static.find_write_of_input,
+    "PHP_OBFUSCATION_LADDER": php_static.find_obfuscation_ladder,
+    "PHP_KNOWN_FAMILY": php_static.find_known_family,
+    "PHP_EXEC_SINK_ONLY": php_static.find_exec_sink_only,
+    "PHP_AUTH_GATE": php_static.find_auth_gate,
+    "PHP_REQUEST_HEADER_SOURCE": php_static.find_request_header_source,
+    "PHP_BASE64_BLOB": php_static.find_base64_blob,
+    "PHP_HIGH_ENTROPY": php_static.find_high_entropy,
+    "PHP_ONE_LINER": php_static.find_one_liner,
+    "PHP_PADDED_TAG": php_static.find_padded_tag,
 }
 
 _RULES: list = []

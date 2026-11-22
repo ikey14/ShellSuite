@@ -775,3 +775,29 @@ Notes:
 - `php_before_soi.jpg` reports both `IMG_PHP_BEFORE_SOI` and `TYPE_MAGIC_MISMATCH`: two different facts (content position, and extension vs magic), different categories.
 - JPEG EOI is located with `find` after SOS, not `rfind`: valid entropy data byte-stuffs `FF`, so the first `FFD9` is the real trailer, while `rfind` would be fooled by a polyglot tail containing `FFD9`.
 - Walkers are O(number of blocks); the JPEG entropy stream is skipped, not scanned.
+
+[2026-11-22 12:23] Task: PHP static analysis (14 structural rules) on tree-sitter.
+
+What was done:
+- Added `tree-sitter` and `tree-sitter-php` to `pyproject.toml` and reinstalled.
+- `shellblock/analyze/context.py`: `php_model` cache field (`TYPE_CHECKING` import, same lazy pattern as `image_regions`).
+- New `shellblock/analyze/php_static.py`: one parse per file into a `PhpModel` (nodes, call sites, one-hop symbol table, HTTP_* key variables, auth-result variables, user functions whose body reaches a sink) plus 14 detectors.
+  - AST: eval/assert, OS exec (including backticks), dynamic calls (`$f()`, `call_user_func`, `array_map('assert', ...)`), include/require, writes, sink-without-source, decoder ladder by node containment, strict auth gate, request header sources, one-liner.
+  - Raw bytes: family fingerprints, base64 >= 120, max Shannon entropy over 256-byte windows > 5.5, padded `<?php`.
+  - Taint resolver: superglobals (bare and subscripted), `$_SERVER` only for HTTP_* (including `$__ss_key = "HTTP_" . ...`), `php://input`, `getallheaders()`, concatenation, conditional, casts, decoder results, one-hop variables; `isset`/`empty` do not propagate.
+  - Auth gate: `hash("sha256"/"md5"/"sha1", input)` (or strcmp/hash_equals) against a matching-length hex digest, result variable wired to an `if` whose body reaches a sink, including through wrapper functions (`__ss_run`).
+- `shellblock/rules.json`: version 2026-11-22; 14 PHP structural rules with points/tiers from section 6.3, `applies_to: ["php"]` only (no PHP rules on images, per decision).
+- `shellblock/rules.py`: 14 new `DETECTORS` entries.
+
+What was tested:
+- `block rules --validate` -> `rules.json OK`; `block rules` lists 32 rules.
+- In-memory cases: direct/indirect eval, OS exec (direct and concatenated), literal sink -> only PHP_EXEC_SINK_ONLY, include, write, ladder (and no ladder for sibling decoders), padded tag, China Chopper -> family + eval, header source, strict auth gate (and plain `if ($_POST == "admin")` does not fire it), bare `$_POST` and tainted callable for dynamic calls, `php://input`, base64 blob, entropy window 7.2, clean PDO page -> no findings, comment/string mentions -> no findings.
+- All 11 generated shells analysed: every one gets PHP_OS_EXEC_OF_INPUT; auth/encrypted get PHP_AUTH_GATE; header vector gets PHP_REQUEST_HEADER_SOURCE.
+- JPEG with PHP in COM: only image rules selected and IMG_HIDDEN_PHP fires; no PHP rules run.
+- CLI `block analyze` on auth_post.php: static stage rules=17, matched=2 (OS exec + auth gate); auth gate evidence is the full hash comparison.
+- `python -m unittest discover -s tests` -> 158 tests, same pre-existing 4 failures + 3 errors.
+
+Notes:
+- No unit tests added (manual testing by the student).
+- `PHP_HIGH_ENTROPY` runs only for detected type `php`; images never reach it.
+- The auth gate requires a digest-length hex literal; a plaintext credential comparison is intentionally not matched.
