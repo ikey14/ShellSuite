@@ -801,3 +801,25 @@ Notes:
 - No unit tests added (manual testing by the student).
 - `PHP_HIGH_ENTROPY` runs only for detected type `php`; images never reach it.
 - The auth gate requires a digest-length hex literal; a plaintext credential comparison is intentionally not matched.
+
+[2026-11-23 12:11] Task: pcap packet filtering (tshark/pyshark), HTTP model, carving and upload analysis.
+
+What was done:
+- `pyproject.toml`: added `pyshark>=0.6`.
+- New `shellblock/analyze/capture_static.py`: `HttpMessage`/`TlsFlow`/`CaptureModel`; HTTP pass and TLS handshake pass through pyshark with display filters; optional repeatable `--host` becomes `ip.addr==...`; frame accounting through `capinfos -c -M`; `--dump-json` writes the normalised model to the analysis dir; carving via `tshark --export-objects`, temp dir deleted by default, `--keep-objects [DIR]` keeps it; multipart bodies are split into their file parts and analysed by the file pipeline, other objects are analysed whole, all with `subject="upload:<name>"`; carved pcaps are not re-entered as captures (`allow_capture=False`).
+- `PCAP_TLS_OPAQUE` structural rule (1 point, network, info, pcap only) and detector: one finding per encrypted flow, SNI in evidence/detail, SNI also in `notes[]`.
+- `result.Stage` gained optional `frames` and `kept`; capture stage reports total frames and the HTTP subset. `pipeline.analyze` dispatches pcap to the capture path; `cli.py` gained `--host`, `--dump-json`, `--keep-objects` and maps `CaptureError` to exit 2.
+- `analyze/context.py`: `capture_model` field.
+
+What was tested (synthetic capture built with text2pcap-style framing plus a real TLS ClientHello):
+- 11 frames, HTTP filter kept 4 (GET, response, multipart POST, response); TLS pass found `example.com` on stream 2.
+- No host filter: upload part `shell.php` extracted from the multipart body and analysed -> `PHP_EXEC_SINK_ONLY`, `SIG_PHP_SINK_NAME`, `PHP_ONE_LINER` with subject `upload:shell.php`; `PCAP_TLS_OPAQUE` for the encrypted flow.
+- `--host 10.0.0.3` -> kept 2, only the upload; `--host 10.0.0.2` -> kept 2, only the TLS finding; no cross-host objects.
+- `--dump-json` produced `capture.pcap_http.json`; `--keep-objects` kept `upload.php`, `upload(1).php`, `shell.php%3fcmd=id` and the extracted `_part0_shell.php`.
+- With tshark/capinfos off PATH: `error: capinfos not found; install Wireshark ...`, exit 2.
+- `block rules --validate` -> OK; 158 tests, same pre-existing 4 failures + 3 errors.
+
+Notes:
+- `--export-objects` ignores `-Y`, so host-filtered carving first writes a `tcp.stream==N` filtered pcap, then exports from it.
+- Multipart bodies are named after the request URI by tshark, so the parts are parsed in Python; the declared filename becomes the subject.
+- Capture signature stage is still `skipped`; pcap rules come next. No tests added.

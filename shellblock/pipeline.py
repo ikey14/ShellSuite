@@ -13,13 +13,34 @@ from shellblock.rules import DETECTORS, LoadRules, signature_rules, structural_r
 
 DEFAULT_MAX_SIZE = 64 * 1024 * 1024
 
-def analyze(path: Path, max_size: int = DEFAULT_MAX_SIZE) -> Result:
+def analyze(
+    path: Path,
+    max_size: int = DEFAULT_MAX_SIZE,
+    *,
+    hosts: list[str] | None = None,
+    keep_objects: str | bool | None = None,
+    dump_json: bool = False,
+    allow_capture: bool = True,
+) -> Result:
     """Executes the applicable analysis stages (magic detection, signature matching, static analysis) to the 
     file on the path, and returns the result in Result format
     """
     started = time.perf_counter()
     detection = detect(path)
     detect_ms = _elapsed(started)
+
+    if allow_capture and detection.detected_type == "pcap":
+        from shellblock.analyze import capture_static
+
+        return capture_static.analyze(
+            path,
+            detection,
+            max_size,
+            list(hosts or []),
+            keep_objects,
+            dump_json,
+            detect_ms,
+        )
 
     buffer, truncated = _read_capped(path, max_size, detection.size)
     notes = []

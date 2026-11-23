@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal
 from shellblock.detect import Detection
 
 if TYPE_CHECKING:
+    from shellblock.analyze.capture_static import CaptureModel
     from shellblock.analyze.php_static import PhpModel
 
 RegionKind = Literal["prefix", "segment", "chunk", "trailing"]
@@ -28,3 +29,4 @@ class Context:
     errors: list[str] = field(default_factory=list)
     image_regions: list[Region] | None = None
     php_model: "PhpModel | None" = None
+    capture_model: "CaptureModel | None" = None

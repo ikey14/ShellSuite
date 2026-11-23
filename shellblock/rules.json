@@ -1,5 +1,5 @@
 {
-    "version": "2026-11-22",
+    "version": "2026-11-23",
     "categories": {
         "hidden_payload": "code or markup hidden inside a non-code container",
         "code_execution": "code or command execution reachable from request input",
@@ -218,6 +218,16 @@
             "severity": "low",
             "applies_to": ["php"],
             "rationale": "A PHP tag after a kilobyte of whitespace evades grep-style inspection."
+        },
+        {
+            "id": "PCAP_TLS_OPAQUE",
+            "kind": "structural",
+            "title": "Encrypted flow",
+            "category": "network",
+            "points": 1,
+            "severity": "info",
+            "applies_to": ["pcap"],
+            "rationale": "An encrypted flow is reported with its SNI, never scored as content: ciphertext cannot be read without keys."
         },
         {
             "id": "SIG_PHP_TAG",

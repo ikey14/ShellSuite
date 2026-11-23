@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from shellblock.helpers.jsonLoader import load_json
-from shellblock.analyze import image_static, php_static
+from shellblock.analyze import capture_static, image_static, php_static
 
 # Populated by the static stage: structural rule id -> detector function.
 DETECTORS: dict = {
@@ -30,6 +30,7 @@ DETECTORS: dict = {
     "PHP_HIGH_ENTROPY": php_static.find_high_entropy,
     "PHP_ONE_LINER": php_static.find_one_liner,
     "PHP_PADDED_TAG": php_static.find_padded_tag,
+    "PCAP_TLS_OPAQUE": capture_static.find_tls_opaque,
 }
 
 _RULES: list = []

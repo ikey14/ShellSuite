@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from shellblock import pipeline, store
+from shellblock.analyze.capture_static import CaptureError
 from shellblock.result import Result
 
 from shellblock.rules import LoadRules, ValidateRules
@@ -45,7 +46,17 @@ def _CmdAnalyze(args: argparse.Namespace) -> int:
         print(f"error: no such file: {path}", file=sys.stderr)
         return 2
     
-    result = pipeline.analyze(path, max_size=args.max_size * 1024 * 1024)
+    try:
+        result = pipeline.analyze(
+            path,
+            max_size=args.max_size * 1024 * 1024,
+            hosts=args.host,
+            keep_objects=args.keep_objects,
+            dump_json=args.dump_json,
+        )
+    except CaptureError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     saved = store.write_result(result)
     
     if args.json:
@@ -61,6 +72,10 @@ def _PrintSummary(result: Result, saved: Path) -> None:
     suffix = " (truncated)" if target["truncated"] else ""
 
     print(f"{target['name']}: {target['detected_type']}, {target['size']} bytes{suffix}")
+
+    for stage in result.stages:
+        if stage.frames is not None:
+            print(f"  frames: {stage.kept or 0} of {stage.frames} kept for analysis")
     
     if target["type_mismatch"]:
         print(f"  extension .{target['extension']} contradicts the magic bytes")
@@ -93,6 +108,18 @@ def register_parser(subparsers: argparse._SubParsersAction) -> None:
     analyze.add_argument(
         "--max-size", type=int, default=64, metavar="MB",
         help="read at most MB megabytes (default 64)",
+    )
+    analyze.add_argument(
+        "--host", action="append", default=[], metavar="IP",
+        help="only analyse packets to/from IP (repeatable)",
+    )
+    analyze.add_argument(
+        "--dump-json", action="store_true",
+        help="save the normalised HTTP/TLS capture model",
+    )
+    analyze.add_argument(
+        "--keep-objects", nargs="?", const=True, default=None, metavar="DIR",
+        help="keep the objects carved from HTTP bodies (optionally in DIR)",
     )
     analyze.set_defaults(handler = _CmdAnalyze)
 

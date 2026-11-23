@@ -62,6 +62,8 @@ class Stage:
     rules: int | None = None
     matched: int | None = None
     units: int | None = None
+    frames: int | None = None
+    kept: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -69,7 +71,7 @@ class Stage:
             "status": self.status,
             "duration_ms": self.duration_ms,
         }
-        for key in ("rules", "matched", "units"):
+        for key in ("rules", "matched", "units", "frames", "kept"):
             value = getattr(self, key)
             if value is not None:
                 data[key] = value

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "ShellSuite: webshell generation and management (ShellShock) - academic project."
 readme = "README_EN.md"
 requires-python = ">=3.10"
-dependencies = ["tree-sitter>=0.23", "tree-sitter-php>=0.23"]
+dependencies = ["tree-sitter>=0.23", "tree-sitter-php>=0.23", "pyshark>=0.6"]
 
 [project.scripts]
 shellsuite = "shellsuite.cli:main"
