@@ -887,3 +887,26 @@ What was tested (`block analyze` with tshark 4.4.19 on Python 3.13.5, plus the 3
 Notes:
 - No tests added (manual testing by the student).
 - Left as open questions in the PR: repeated hits per object (SIG_SS_PARAM x22 on one capture), PHP signature rules still running on `unknown` files (`dvwaPage.js` -> `eval(`), object naming collisions when a request and a response share a URI.
+
+[2026-11-26 19:35] Task: score, list and show (the two remaining packages).
+
+What was done:
+- `shellblock/store.py`: `SCORE_SUFFIX` / `score_path()` / `write_score()` / `read_result()` / `read_score()` / `read_analysis(path)` / `result_files()` / `score_files()` / `name_from_path()` / `StoreError`; the atomic write now serves both files.
+- New `shellblock/score/scoring.py`: `compute(result, rules)` builds contract B, `ruleset()` = `rules.json` version + first 8 hex of its sha256, `score_target()` reads the result file, writes the score file and returns both. Formula from §6.4: distinct `points > 0` rules once each + `min(20, 10 × (categories − 1))`, capped at 100; `raw_points` is the pre-cap total including corroboration; `contributions` top 3, ties by `rule_id`; `by_category` sorted so two runs are byte-identical.
+- New `shellblock/list/list_cmd.py`: `block list results|scores` with `--order`, `--asc/--desc`, repeatable `--filter` through `shellsuite.filters` (same grammar as `shock manage list`) and `--json`; numeric sort for size/findings/errors/score/raw_points/categories, date compare for `analyzed_at`, fixed-width table otherwise.
+- New `shellblock/show/show_cmd.py`: `block show --file NAME` renders target, source, stages, findings with `@offset`, and the score with top 3 + breakdown; `--json` returns `{result, score}`. `render_score()` is shared with the `analyze --score` chain.
+- `shellblock/cli.py`: `score`, `list`, `show` registered; `analyze --score` chains the two; the analyze summary now ends with `N findings, M raw points → run 'shellsuite block score --file X'`. `analyze --json` keeps printing the result document only (the score is read with `block score --json`), so the existing shape did not change.
+- `AGENTS.md` §5 / §9: `raw_points` definition, and the field list available to `list --order` / `--filter`.
+
+What was tested (fresh SHELLSUITE_HOME, Python 3.13.5):
+- `block analyze --file disguised.jpg --score` -> 4 findings, 45 raw points, `45/100 (45 %)`, `hidden_payload 45 · corroboration +0`.
+- `_part0_PostEncShell.php` -> 75/100 (50 OS-exec + 15 auth gate, two categories, +10) and `logo.png` -> 0/100.
+- `mixed.pcap` -> 100/100, raw 173, three categories (network 93, metadata 10, code_execution 50), corroboration +20, `capped: true`.
+- `block score --json` twice -> byte-identical files; unknown `rule_id` in a result -> `error: unknown rule_id(s) in the result: NOT_A_RULE`, exit 1; missing result -> exit 1 with the analyze hint.
+- `block list results` / `list scores` / `--filter 'score > 60'` / `--order name --asc` / `--json`; bad attribute and bad order -> exit 2.
+- `block show` on image, webshell and pcap (22 lines, 12 findings, all notes), `show --json`, `show` before scoring -> `not scored yet`, missing target -> exit 1.
+- `block rules --validate` OK; 154 tests, same pre-existing 4 failures + 5 errors (shellshock crypto/gui/manager_client).
+
+Notes:
+- No tests added (manual testing by the student).
+- Open questions in the PR: `--json` shape for `analyze --score`, whether `raw_points` should include corroboration (the brief was ambiguous, documented in §5), and whether the `list` tables should show `sha256`.

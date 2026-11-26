@@ -154,8 +154,9 @@ Invariants (tests assert them):
   do not add one. `show` prints `87/100 (87 %)`.
 - `contributions` = top 3 by points, ties broken by `rule_id` (deterministic).
 - `count` = times the rule fired; the weight is added **once**.
-- `raw_points` = sum before the 100 cap. `ruleset` = `rules.json` `version` +
-  first 8 hex of its sha256 — two scores are comparable only if it matches.
+- `raw_points` = sum before the 100 cap, corroboration included. `ruleset` =
+  `rules.json` `version` + first 8 hex of its sha256 — two scores are comparable
+  only if it matches.
 - `breakdown` = points per category after the once-per-rule rule, the corroboration
   bonus granted, and whether the cap bit.
 
@@ -510,7 +511,12 @@ shellsuite block rules [--json] [--validate]
 - `score` reads the result file only, writes the score file, prints
   `score: 87/100 (87 %)` + the top 3.
 - `list` globs the analysis dir; filtering/ordering reuse `shellsuite.filters`, so
-  the grammar matches `shock manage list` exactly.
+  the grammar matches `shock manage list` exactly. Fields: `results` →
+  `name detected_type extension size findings errors analyzed_at type_mismatch`;
+  `scores` → `name score raw_points categories ruleset capped sha256`. `size`,
+  `findings`, `errors`, `score`, `raw_points` and `categories` compare numerically,
+  `analyzed_at` compares by date. A result without a score file is absent from
+  `list scores`.
 - `show` renders result + score as a fixed-width block: target, stages, findings
   with `@offset`, score with contributions and breakdown.
 - `--json` on every query action; never `print()` in a `--json` path.
