@@ -224,7 +224,7 @@
             "kind": "structural",
             "title": "Encrypted flow",
             "category": "network",
-            "points": 1,
+            "points": 0,
             "severity": "info",
             "applies_to": ["pcap"],
             "rationale": "An encrypted flow is reported with its SNI, never scored as content: ciphertext cannot be read without keys."

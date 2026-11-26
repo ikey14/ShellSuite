@@ -105,6 +105,7 @@ class BodyInfo:
     head: str
     tail: str
     truncated: bool
+    frame: int | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,8 @@ class UploadInfo:
     detected_type: str
     type_mismatch: bool
     is_php: bool
+    frame: int | None = None
+    hidden_payload: bool = False
 
 
 @dataclass(frozen=True)
@@ -133,6 +136,7 @@ class ResponseInfo:
     head: str
     tail: str
     truncated: bool
+    frame: int | None = None
 
 
 @dataclass
@@ -205,14 +209,6 @@ def analyze(
             + (f"; SNI: {', '.join(snis)}" if snis else "")
         )
 
-    if dump_json:
-        model_path = config.analysis_dir() / f"{path.name}_http.json"
-        model_path.write_text(
-            json.dumps(model.to_dict(), indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        notes.append(f"HTTP model saved to {model_path}")
-
     directory, cleanup = _carve(
         path,
         sorted({message.stream for message in model.messages if message.stream is not None})
@@ -221,8 +217,8 @@ def analyze(
         keep_objects,
     )
     try:
-        object_findings, object_errors, objects, unmatched, body_signatures = (
-            _collect_objects(directory, max_size, model)
+        object_findings, object_errors, unmatched = _collect_objects(
+            directory, max_size, model
         )
     finally:
         if cleanup:
@@ -232,9 +228,19 @@ def analyze(
 
     errors.extend(object_errors)
     if unmatched:
-        notes.append(f"{unmatched} carved object(s) could not be linked to a stream")
+        notes.append("carved objects not linked to a stream: " + ", ".join(unmatched))
 
-    wire_findings, wire_signatures = _wire_signatures(model)
+    if dump_json:
+        model_path = config.analysis_dir() / f"{path.name}_http.json"
+        model_path.write_text(
+            json.dumps(model.to_dict(), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        notes.append(f"HTTP model saved to {model_path}")
+
+    started_signatures = time.perf_counter()
+    wire_findings, _ = _wire_signatures(model)
+    signature_ms = _elapsed(started_signatures)
 
     context = Context(
         buffer=b"",
@@ -242,7 +248,7 @@ def analyze(
         path=path,
         capture_model=model,
     )
-    from shellblock.rules import DETECTORS, signature_rules, structural_rules
+    from shellblock.rules import DETECTORS, LoadRules, structural_rules
 
     capture_rules = structural_rules(detection.detected_type)
     capture_findings = [
@@ -253,10 +259,21 @@ def analyze(
     findings = wire_findings + object_findings + capture_findings
     _sort(findings)
 
-    signature_ruleset = signature_rules("pcap")
-    signature_ids = wire_signatures | body_signatures
+    ruleset = LoadRules()
+    signature_ids = {rule["id"] for rule in ruleset if rule["kind"] == "signature"}
+    structural_set = [rule for rule in ruleset if rule["kind"] == "structural"]
+    reported = {finding.rule_id for finding in findings}
     static_ms = _elapsed(started)
-    static_matched = len({finding.rule_id for finding in capture_findings})
+    # On a capture a stage covers the whole capture: the wire heads and the carved
+    # bodies. `rules` therefore counts the rules of that kind in the table, and
+    # `matched` every one of them that reached findings[] (contract A, `stages[]`).
+    signature_matched = len([rule_id for rule_id in reported if rule_id in signature_ids])
+    static_matched = len(
+        [rule_id for rule_id in reported if rule_id not in signature_ids]
+    )
+    flows = {message.stream for message in model.messages if message.stream is not None}
+    # One unit for the capture, one per TCP conversation, one per uploaded part.
+    units = 1 + len(flows) + len(model.uploads)
 
     return Result(
         target={
@@ -275,17 +292,17 @@ def analyze(
             Stage(
                 "signature",
                 "ok",
-                0,
-                rules=len(signature_ruleset),
-                matched=len(signature_ids),
+                signature_ms,
+                rules=len(signature_ids),
+                matched=signature_matched,
             ),
             Stage(
                 "static",
                 "ok",
                 static_ms,
-                rules=len(capture_rules),
+                rules=len(structural_set),
                 matched=static_matched,
-                units=1 + objects,
+                units=units,
                 frames=model.frames,
                 kept=model.kept,
             ),
@@ -334,6 +351,7 @@ def find_php_upload(ctx: Context, rule: dict) -> list[Finding]:
                 escape_evidence(upload.filename.encode("latin-1")),
                 {
                     "stream": upload.stream,
+                    "frame": upload.frame,
                     "filename": upload.filename,
                     "size": upload.size,
                     "declared_type": upload.extension,
@@ -344,7 +362,8 @@ def find_php_upload(ctx: Context, rule: dict) -> list[Finding]:
 
 
 def find_disguised_upload(ctx: Context, rule: dict) -> list[Finding]:
-    """An image-named part whose bytes are PHP or contradict the image claim."""
+    """An image-named part whose bytes are PHP, contradict the image claim, or
+    hide a payload the file stage already found inside the declared image."""
     model = ctx.capture_model
     if model is None:
         return []
@@ -356,7 +375,12 @@ def find_disguised_upload(ctx: Context, rule: dict) -> list[Finding]:
         )
         if not declared_image:
             continue
-        if not (upload.is_php or upload.type_mismatch or upload.detected_type == "php"):
+        if not (
+            upload.is_php
+            or upload.type_mismatch
+            or upload.detected_type == "php"
+            or upload.hidden_payload
+        ):
             continue
         hits.append(
             _finding_span(
@@ -366,10 +390,12 @@ def find_disguised_upload(ctx: Context, rule: dict) -> list[Finding]:
                 escape_evidence(upload.filename.encode("latin-1")),
                 {
                     "stream": upload.stream,
+                    "frame": upload.frame,
                     "filename": upload.filename,
                     "declared_type": upload.extension,
                     "detected_type": upload.detected_type,
                     "is_php": upload.is_php,
+                    "hidden_payload": upload.hidden_payload,
                 },
             )
         )
@@ -386,11 +412,14 @@ def find_shell_request(ctx: Context, rule: dict) -> list[Finding]:
         if not message.method:
             continue
         buffers = [(_text_bytes(message.head), "http", "request-head")]
-        buffers.extend(
-            (_body_bytes(body), "byte_offset", "request-body")
-            for body in model.bodies
-            if body.stream == message.stream and body.direction == "request"
-        )
+        if not (message.content_type or "").lower().startswith("multipart/"):
+            # A multipart body is a file being uploaded, not a command being sent:
+            # the upload rules and the file stage own those bytes (specificity).
+            buffers.extend(
+                (_body_bytes(body), "byte_offset", "request-body")
+                for body in model.bodies
+                if body.stream == message.stream and body.direction == "request"
+            )
         for buffer, kind, name in buffers:
             match = _SHELL_REQUEST.search(buffer)
             if match is None:
@@ -595,16 +624,19 @@ def _wire_signatures(model: CaptureModel) -> tuple[list[Finding], set[str]]:
 # --------------------------------------------------------------------------
 def _collect_objects(
     directory: Path, max_size: int, model: CaptureModel
-) -> tuple[list[Finding], list[str], int, int, set[str]]:
+) -> tuple[list[Finding], list[str], list[str]]:
     from shellblock.pipeline import analyze as analyze_file
     from shellblock.rules import LoadRules
 
     rules_by_id = {rule["id"]: rule for rule in LoadRules()}
+    hidden_payload_rules = {
+        rule_id
+        for rule_id, rule in rules_by_id.items()
+        if rule["category"] == "hidden_payload"
+    }
     findings: list[Finding] = []
     errors: list[str] = []
-    matched: set[str] = set()
-    count = 0
-    unmatched = 0
+    unmatched: list[str] = []
 
     paths = [
         path
@@ -616,6 +648,11 @@ def _collect_objects(
     for object_path in paths:
         data = object_path.read_bytes()[:max_size]
         message = assignments.get(object_path)
+        object_detail = {
+            "stream": message.stream if message is not None else None,
+            "frame": message.frame if message is not None else None,
+            "object": object_path.name,
+        }
         if data.startswith(b"--"):
             parts = _multipart_parts(data)
             if parts:
@@ -624,10 +661,17 @@ def _collect_objects(
                     part_path = directory / f"_part{index}_{safe_name}"
                     part_path.write_bytes(content)
                     result = analyze_file(
-                        part_path, max_size=max_size, allow_capture=False
+                        part_path,
+                        max_size=max_size,
+                        allow_capture=False,
                     )
+                    detail = {**object_detail, "role": "upload"}
                     findings.extend(
-                        replace(finding, subject=f"upload:{filename}")
+                        replace(
+                            finding,
+                            subject=f"upload:{filename}",
+                            detail={**finding.detail, **detail},
+                        )
                         for finding in result.findings
                     )
                     errors.extend(
@@ -644,6 +688,11 @@ def _collect_objects(
                         detected_type=str(target["detected_type"]),
                         type_mismatch=bool(target["type_mismatch"]),
                         is_php=content.lstrip().startswith(b"<?"),
+                        frame=message.frame if message is not None else None,
+                        hidden_payload=any(
+                            finding.rule_id in hidden_payload_rules
+                            for finding in result.findings
+                        ),
                     )
                     model.uploads.append(upload)
                     missing = _missing_signatures(
@@ -657,22 +706,16 @@ def _collect_objects(
                         _flow_meta(message),
                     )
                     findings.extend(missing)
-                    matched.update(finding.rule_id for finding in missing)
-                    count += 1
 
                 upload_rule = rules_by_id.get("SIG_UPLOAD_PART")
                 if upload_rule is not None:
                     subject = f"upload:{parts[0][0]}" if parts[0][0] else f"upload:{object_path.name}"
                     for finding in run_signatures(data, [upload_rule]):
-                        matched.add(finding.rule_id)
                         findings.append(
                             replace(
                                 finding,
                                 subject=subject,
-                                detail={
-                                    "stream": message.stream if message else None,
-                                    "object": object_path.name,
-                                },
+                                detail={**object_detail, "role": "upload"},
                             )
                         )
                 if message is not None:
@@ -681,15 +724,22 @@ def _collect_objects(
                     )
                 continue
 
-        result = analyze_file(object_path, max_size=max_size, allow_capture=False)
+        result = analyze_file(
+            object_path, max_size=max_size, allow_capture=False, from_body=True
+        )
+        role = "request" if message is not None and message.method else "response"
+        detail = {**object_detail, "role": role}
         findings.extend(
-            replace(finding, subject=f"upload:{object_path.name}")
+            replace(
+                finding,
+                subject=f"upload:{object_path.name}",
+                detail={**finding.detail, **detail},
+            )
             for finding in result.findings
         )
         errors.extend(f"{object_path.name}: {error}" for error in result.errors)
-        count += 1
         if message is None:
-            unmatched += 1
+            unmatched.append(f"{object_path.name} ({len(data)} bytes)")
             continue
 
         detected = str(result.target["detected_type"])
@@ -716,6 +766,7 @@ def _collect_objects(
                     head=_head(data),
                     tail=_tail(data),
                     truncated=len(data) > 2 * _SAMPLE_BYTES,
+                    frame=message.frame,
                 )
             )
             missing = _missing_signatures(
@@ -726,10 +777,8 @@ def _collect_objects(
                 _flow(message),
                 _flow_meta(message),
             )
-        for finding in missing:
-            matched.add(finding.rule_id)
         findings.extend(missing)
-    return findings, errors, count, unmatched, matched
+    return findings, errors, unmatched
 
 
 def _assign_messages(
@@ -866,6 +915,7 @@ def _body_info(
         head=_head(data),
         tail=_tail(data),
         truncated=len(data) > 2 * _SAMPLE_BYTES,
+        frame=message.frame,
     )
 
 
@@ -981,7 +1031,13 @@ def _open_capture(path: Path, display_filter: str):
             display_filter=display_filter,
             keep_packets=False,
         )
-    except (TSharkNotFoundException, FileNotFoundError, OSError) as exc:
+    except (
+        TSharkNotFoundException,
+        FileNotFoundError,
+        OSError,
+        RuntimeError,
+        AttributeError,
+    ) as exc:
         raise CaptureError(f"tshark is unavailable ({exc}); {_TSHARK_HINT}") from exc
 
 
