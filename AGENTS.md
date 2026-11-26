@@ -106,9 +106,9 @@ Field meanings:
 | `schema` | format version (1). Bumped only when a field changes meaning; `score` refuses a file it does not understand. |
 | `target.truncated` | `true` when the file exceeded `--max-size` and only the first N MB were read. `size` keeps the real size. |
 | `stages[].status` | `ok` · `skipped` (not applicable to this type) · `error` (see `errors[]`). Always present. |
-| `stages[].rules` | applicable rules from `rules.json` evaluated for this type. |
-| `stages[].matched` | how many of them produced ≥ 1 finding (`matched ≤ rules`). |
-| `stages[].units` | structural units walked: 1 per file, 1 per capture flow, +1 per carved upload. |
+| `stages[].rules` | rules of that stage's kind in `rules.json`. On a capture the stage spans the wire heads **and** the carved bodies, so this is the whole kind, not the subset applicable to `pcap`. |
+| `stages[].matched` | how many of them produced ≥ 1 finding anywhere in the result, wire or carved body (`matched ≤ rules`). |
+| `stages[].units` | structural units walked: 1 per file; for a capture, 1 + one per TCP conversation + one per uploaded file part. |
 | `findings[].detail` | per-rule extras for `show` (segment length, nesting depth, HTTP status). **Never scored**, never parsed by `score`. |
 | `notes[]` | detector remarks that are not evidence: TLS flow opaque + SNI, file truncated, h2 not decoded. |
 | `errors[]` | what failed: tshark exit 2, malformed multipart part, unreadable JPEG segment. |
@@ -122,6 +122,11 @@ Invariants (tests assert them):
 4. Findings are sorted by `(category, location.offset, rule_id)` — two runs on the
    same file are byte-identical.
 5. `subject`: `"file"`, `"flow:<src>:<sport>-><dst>:<dport>"`, or `"upload:<name>"`.
+   A `flow:` subject is per **direction**, so one TCP conversation yields two
+   (request-side findings on `client->server`, response-side on `server->client`).
+   An `upload:` subject is a carved HTTP body named after the request URI; its
+   `detail` carries `frame`, `stream`, `role` (`upload` / `request` / `response`)
+   and the tshark object name, because two bodies can share one name.
 6. `location.kind` ∈ `byte_offset` · `line` · `segment` · `chunk` · `packet` ·
    `stream` · `http`. `score` never parses `location`; `show` does.
 
@@ -190,9 +195,11 @@ Single registry. The repo currently has `categories` as a bare list and no `rule
   `scope` is `bytes` (raw buffer) or `text` (latin-1 decode, for case-insensitive
   markers). Adding one is a JSON edit only.
 - `kind: "structural"` → the detector is Python, registered in `DETECTORS`.
-- `points: 0` = gate/context rule: it appears in findings, it can enable a
-  structural rule, it contributes nothing to the score **and nothing to the
-  category count**.
+- `points: 0` = gate/context rule, whatever its `kind`: it appears in findings, it
+  can enable a structural rule, it contributes nothing to the score **and nothing
+  to the category count**. A structural rule may be a gate (`PCAP_TLS_OPAQUE`
+  reports ciphertext that must never be scored); a signature rule is **always**
+  a gate, because a byte pattern alone is the weakest evidence there is.
 - `applies_to` = detected types the rule is considered for. PHP inside a `.jpg`
   fires; the same bytes in a `.php` do not. That context check is the difference
   between a rule engine and a grep.
@@ -220,7 +227,8 @@ DETECTORS = {
    not compile;
 4. `structural` with no `DETECTORS` entry (defined, never implemented);
 5. a `DETECTORS` entry with no `structural` rule (implemented, never weighted);
-6. a `points: 0` rule not marked as a signature;
+6. a `points: 0` rule that a `signature` field claims to score (signatures are
+   gates: `points` must be 0 when `kind` is `signature`);
 7. a result file that emits a `rule_id` the table does not declare, or whose
    `ruleset` does not match.
 
@@ -360,7 +368,10 @@ A lone `TYPE_MAGIC_MISMATCH` (20, identity) = **20**.
   the tests replay it. This dev container has no tshark and no root to install it:
   a test that needs the binary is a broken test.
 - **`.pcap` only.** A pcapng file (magic `0A0D0D0A`) is refused with
-  "save as *Wireshark/tcpdump pcap*", exit code 2 — never a traceback.
+  "save as *Wireshark/tcpdump pcap*", exit code 2 — never a traceback. The magic is
+  in `info.json` (`pcapng`), so `detect.py` names it; `pipeline.analyze` is what
+  refuses it. Do not let the name fall through to the `unknown` type, or a capture
+  saved in Wireshark's default format is silently "clean".
 - **After adding a package or a new `__init__.py`, re-run `pip install -e .`.** The
   editable-install finder is generated at install time and only maps packages that
   existed then: create `shellblock/analyze/` and, until you reinstall,
@@ -387,6 +398,12 @@ Magic bytes decide the type; the extension only claims one. Aliases: `jpg`↔`jp
 
 A `.jpg` that is really a PNG is `TYPE_MAGIC_MISMATCH`, not an error. Never compare
 `extension == detected_type` without the alias table (that flags every JPEG).
+
+`detect(path, extension_claims=False)` is for a body carved **whole** out of a
+capture: tshark names those after the request URI, so the name is not a claim — the
+type comes from the magic bytes alone and no mismatch is reported. Multipart
+**parts** keep the claim (the filename is the attacker's), which is what lets
+`PCAP_DISGUISED_UPLOAD` see a `.jpg` whose magic is not a picture.
 
 ### 8.2 Signature stage (`analyze/signatures.py`)
 
