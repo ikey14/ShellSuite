@@ -1,10 +1,435 @@
 {
-    "categories": [
-        "hidden_payload",
-        "code_execution",
-        "obfuscation",
-        "identity",
-        "network",
-        "metadata"
+    "version": "2026-11-26",
+    "categories": {
+        "hidden_payload": "code or markup hidden inside a non-code container",
+        "code_execution": "code or command execution reachable from request input",
+        "obfuscation": "encoded, layered or padded payload",
+        "identity": "the file is not what it claims to be",
+        "network": "upload or command traffic inside a capture",
+        "metadata": "shape and statistics of the file itself"
+    },
+    "rules": [
+        {
+            "id": "IMG_PHP_BEFORE_SOI",
+            "kind": "structural",
+            "title": "PHP before the image signature",
+            "category": "hidden_payload",
+            "points": 50,
+            "severity": "critical",
+            "applies_to": ["php", "jpeg", "png", "gif", "unknown"],
+            "rationale": "Bytes before the image signature mean the file is PHP that carries a picture, not a picture."
+        },
+        {
+            "id": "IMG_HIDDEN_PHP",
+            "kind": "structural",
+            "title": "PHP hidden inside an image",
+            "category": "hidden_payload",
+            "points": 45,
+            "severity": "critical",
+            "applies_to": ["jpeg", "png", "gif", "unknown"],
+            "rationale": "A picture never contains PHP: the metadata segment or the tail carries a payload."
+        },
+        {
+            "id": "IMG_SCRIPT_IN_SEGMENT",
+            "kind": "structural",
+            "title": "Markup in image metadata",
+            "category": "hidden_payload",
+            "points": 20,
+            "severity": "high",
+            "applies_to": ["jpeg", "png", "gif"],
+            "rationale": "Script markup in a metadata segment turns the image into a stored-XSS carrier."
+        },
+        {
+            "id": "IMG_ZIP_AFTER_EOI",
+            "kind": "structural",
+            "title": "ZIP archive after the end of image",
+            "category": "hidden_payload",
+            "points": 35,
+            "severity": "high",
+            "applies_to": ["jpeg", "png", "gif"],
+            "rationale": "A ZIP local header after the image trailer makes the file a PHAR polyglot."
+        },
+        {
+            "id": "IMG_TRAILING_DATA",
+            "kind": "structural",
+            "title": "Data after the end of image",
+            "category": "metadata",
+            "points": 15,
+            "severity": "medium",
+            "applies_to": ["jpeg", "png", "gif"],
+            "rationale": "Non-image bytes after the trailer are suspicious even when they are not code; the specific rule wins when they are."
+        },
+        {
+            "id": "TYPE_MAGIC_MISMATCH",
+            "kind": "structural",
+            "title": "Extension does not match the magic bytes",
+            "category": "identity",
+            "points": 20,
+            "severity": "medium",
+            "applies_to": ["jpeg", "png", "gif", "php", "pcap", "unknown"],
+            "rationale": "The extension claims one type and the bytes say another: the container is lying about itself."
+        },
+        {
+            "id": "DOUBLE_EXTENSION",
+            "kind": "structural",
+            "title": "Executable double extension",
+            "category": "identity",
+            "points": 10,
+            "severity": "low",
+            "applies_to": ["jpeg", "png", "gif", "php", "unknown"],
+            "rationale": "A name like shell.php.jpg targets servers that resolve the last extension but filter on the first."
+        },
+        {
+            "id": "PHP_EVAL_OF_INPUT",
+            "kind": "structural",
+            "title": "eval of request input",
+            "category": "code_execution",
+            "points": 60,
+            "severity": "critical",
+            "applies_to": ["php"],
+            "rationale": "eval/assert reached by request input executes attacker-chosen code."
+        },
+        {
+            "id": "PHP_OS_EXEC_OF_INPUT",
+            "kind": "structural",
+            "title": "OS command built from request input",
+            "category": "code_execution",
+            "points": 50,
+            "severity": "critical",
+            "applies_to": ["php"],
+            "rationale": "system/exec family or backticks reached by request input run attacker-chosen commands."
+        },
+        {
+            "id": "PHP_DYNAMIC_CALL_OF_INPUT",
+            "kind": "structural",
+            "title": "Dynamic call built from request input",
+            "category": "code_execution",
+            "points": 50,
+            "severity": "critical",
+            "applies_to": ["php"],
+            "rationale": "call_user_func or a variable function fed by input dispatches to attacker-chosen code."
+        },
+        {
+            "id": "PHP_INCLUDE_OF_INPUT",
+            "kind": "structural",
+            "title": "include/require of request input",
+            "category": "code_execution",
+            "points": 30,
+            "severity": "high",
+            "applies_to": ["php"],
+            "rationale": "An include fed by input enables local or remote file inclusion; also legitimate, hence not proof."
+        },
+        {
+            "id": "PHP_WRITE_OF_INPUT",
+            "kind": "structural",
+            "title": "File write fed by request input",
+            "category": "code_execution",
+            "points": 30,
+            "severity": "high",
+            "applies_to": ["php"],
+            "rationale": "Writing attacker-controlled bytes to disk is a dropper."
+        },
+        {
+            "id": "PHP_OBFUSCATION_LADDER",
+            "kind": "structural",
+            "title": "Nested decode chain",
+            "category": "obfuscation",
+            "points": 30,
+            "severity": "high",
+            "applies_to": ["php"],
+            "rationale": "Two or more decoders nested inside one sink hide the real payload."
+        },
+        {
+            "id": "PHP_KNOWN_FAMILY",
+            "kind": "structural",
+            "title": "Known webshell family",
+            "category": "identity",
+            "points": 35,
+            "severity": "high",
+            "applies_to": ["php"],
+            "rationale": "A family fingerprint (c99, r57, b374k, WSO, P.A.S., China Chopper) identifies the tool."
+        },
+        {
+            "id": "PHP_EXEC_SINK_ONLY",
+            "kind": "structural",
+            "title": "Execution sink without a source",
+            "category": "code_execution",
+            "points": 18,
+            "severity": "medium",
+            "applies_to": ["php"],
+            "rationale": "An execution sink with no traceable input is still suspicious inside a webroot."
+        },
+        {
+            "id": "PHP_AUTH_GATE",
+            "kind": "structural",
+            "title": "Credential gate guarding execution",
+            "category": "metadata",
+            "points": 15,
+            "severity": "medium",
+            "applies_to": ["php"],
+            "rationale": "A hashed credential comparison wired to an execution path is the shape of every ShellShock shell."
+        },
+        {
+            "id": "PHP_REQUEST_HEADER_SOURCE",
+            "kind": "structural",
+            "title": "Request headers read as a source",
+            "category": "metadata",
+            "points": 12,
+            "severity": "medium",
+            "applies_to": ["php"],
+            "rationale": "getallheaders() or HTTP_* reads are the header-vector channel of header-based shells."
+        },
+        {
+            "id": "PHP_BASE64_BLOB",
+            "kind": "structural",
+            "title": "Large base64 literal",
+            "category": "obfuscation",
+            "points": 8,
+            "severity": "low",
+            "applies_to": ["php"],
+            "rationale": "A very long base64 literal usually carries a packed payload."
+        },
+        {
+            "id": "PHP_HIGH_ENTROPY",
+            "kind": "structural",
+            "title": "High-entropy PHP file",
+            "category": "obfuscation",
+            "points": 8,
+            "severity": "low",
+            "applies_to": ["php"],
+            "rationale": "An incompressible window inside PHP suggests encryption or packing; never applied to images."
+        },
+        {
+            "id": "PHP_ONE_LINER",
+            "kind": "structural",
+            "title": "One-line execution shell",
+            "category": "metadata",
+            "points": 10,
+            "severity": "low",
+            "applies_to": ["php"],
+            "rationale": "Three lines or fewer around an execution sink is the classic dropped one-liner."
+        },
+        {
+            "id": "PHP_PADDED_TAG",
+            "kind": "structural",
+            "title": "PHP tag hidden after padding",
+            "category": "obfuscation",
+            "points": 10,
+            "severity": "low",
+            "applies_to": ["php"],
+            "rationale": "A PHP tag after a kilobyte of whitespace evades grep-style inspection."
+        },
+        {
+            "id": "PCAP_TLS_OPAQUE",
+            "kind": "structural",
+            "title": "Encrypted flow",
+            "category": "network",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["pcap"],
+            "rationale": "An encrypted flow is reported with its SNI, never scored as content: ciphertext cannot be read without keys."
+        },
+        {
+            "id": "PCAP_DISGUISED_UPLOAD",
+            "kind": "structural",
+            "title": "Disguised upload",
+            "category": "network",
+            "points": 50,
+            "severity": "critical",
+            "applies_to": ["pcap"],
+            "rationale": "An image-named upload whose bytes are PHP or contradict the declared image type is a payload wearing a picture."
+        },
+        {
+            "id": "PCAP_PHP_UPLOAD",
+            "kind": "structural",
+            "title": "PHP upload",
+            "category": "network",
+            "points": 40,
+            "severity": "critical",
+            "applies_to": ["pcap"],
+            "rationale": "A multipart part asking for a .php/.phtml/.phar filename is an attempt to drop executable code."
+        },
+        {
+            "id": "PCAP_SHELL_REQUEST",
+            "kind": "structural",
+            "title": "Shell request",
+            "category": "network",
+            "points": 45,
+            "severity": "critical",
+            "applies_to": ["pcap"],
+            "rationale": "A request carrying system()/eval()/assert()/backticks or a ShellShock envelope drives a webshell."
+        },
+        {
+            "id": "PCAP_COMMAND_PARAM",
+            "kind": "structural",
+            "title": "Command parameter",
+            "category": "network",
+            "points": 20,
+            "severity": "medium",
+            "applies_to": ["pcap"],
+            "rationale": "cmd/c/exec/shell/action on a .php path is the command channel of a shell."
+        },
+        {
+            "id": "PCAP_SHELL_RESPONSE",
+            "kind": "structural",
+            "title": "Shell response",
+            "category": "network",
+            "points": 18,
+            "severity": "medium",
+            "applies_to": ["pcap"],
+            "rationale": "Command output or a directory listing in a response proves the request executed."
+        },
+        {
+            "id": "PCAP_MISMATCHED_UPLOAD_RESPONSE",
+            "kind": "structural",
+            "title": "Upload answered with content",
+            "category": "network",
+            "points": 15,
+            "severity": "medium",
+            "applies_to": ["pcap"],
+            "rationale": "An upload answered 200 with a body echoing the filename suggests the server accepted it."
+        },
+        {
+            "id": "PCAP_BEACONING",
+            "kind": "structural",
+            "title": "Regular beaconing",
+            "category": "metadata",
+            "points": 10,
+            "severity": "low",
+            "applies_to": ["pcap"],
+            "rationale": "Five or more equally sized requests on a regular timer look like an implant checking in."
+        },
+        {
+            "id": "SIG_PHP_TAG",
+            "kind": "signature",
+            "title": "PHP open tag",
+            "category": "hidden_payload",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["jpeg", "png", "gif", "unknown"],
+            "scope": "bytes",
+            "pattern": "<\\?(php|=|\\s)",
+            "rationale": "Gate only: a PHP tag inside a container that should not hold PHP unlocks the hidden-payload rules."
+        },
+        {
+            "id": "SIG_PHP_SINK_NAME",
+            "kind": "signature",
+            "title": "Execution sink call",
+            "category": "code_execution",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "jpeg", "png", "gif", "unknown"],
+            "scope": "text",
+            "pattern": "\\b(eval|assert|system|exec|shell_exec|passthru|popen|proc_open|call_user_func|create_function)\\s*\\(",
+            "rationale": "Gate only: a call to a function that executes code or commands is the trigger for the sink rules."
+        },
+        {
+            "id": "SIG_PHP_SUPERGLOBAL",
+            "kind": "signature",
+            "title": "Request superglobal read",
+            "category": "code_execution",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "jpeg", "png", "gif", "unknown"],
+            "scope": "text",
+            "pattern": "\\$_(GET|POST|REQUEST|COOKIE|FILES|SERVER)\\b",
+            "rationale": "Gate only: reading request input is what turns a sink into an input-fed sink."
+        },
+        {
+            "id": "SIG_PHP_DECODER",
+            "kind": "signature",
+            "title": "Decoder call",
+            "category": "obfuscation",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "unknown"],
+            "scope": "text",
+            "pattern": "\\b(base64_decode|gzinflate|gzuncompress|gzdecode|str_rot13|hex2bin|urldecode)\\s*\\(",
+            "rationale": "Gate only: a decoder call is the trigger for the obfuscation ladder."
+        },
+        {
+            "id": "SIG_BASE64_BLOB",
+            "kind": "signature",
+            "title": "Large base64 literal",
+            "category": "obfuscation",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "unknown"],
+            "scope": "bytes",
+            "pattern": "[A-Za-z0-9+/]{120,}={0,2}",
+            "rationale": "Gate only: a long base64 literal suggests a packed payload; the weight belongs to the structural rules."
+        },
+        {
+            "id": "SIG_SHELL_FAMILY",
+            "kind": "signature",
+            "title": "Known webshell family fingerprint",
+            "category": "identity",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "jpeg", "png", "gif", "unknown"],
+            "scope": "text",
+            "pattern": "(c99shell|r57shell|b374k|WSO [0-9]|P\\.A\\.S\\.|@eval\\s*\\(\\s*\\$_POST\\[)",
+            "rationale": "Gate only: a family fingerprint unlocks PHP_KNOWN_FAMILY with the matching context."
+        },
+        {
+            "id": "SIG_SS_PARAM",
+            "kind": "signature",
+            "title": "ShellShock channel parameter",
+            "category": "metadata",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "pcap"],
+            "scope": "text",
+            "pattern": "(shellshock_auth|shellshock|X-ShellShock(-Auth)?)",
+            "rationale": "Gate only: ShellShock's channel names link a PHP shell or a capture to the frozen protocol contract."
+        },
+        {
+            "id": "SIG_SS_ENVELOPE",
+            "kind": "signature",
+            "title": "ShellShock encrypted envelope",
+            "category": "obfuscation",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["php", "unknown", "pcap", "upload"],
+            "scope": "bytes",
+            "pattern": "SSENC",
+            "rationale": "Gate only: the SSENC prefix proves an encrypted ShellShock payload without decrypting it."
+        },
+        {
+            "id": "SIG_SS_RESPONSE",
+            "kind": "signature",
+            "title": "ShellShock response framing",
+            "category": "network",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["pcap", "upload"],
+            "scope": "bytes",
+            "pattern": "<!--SS[BE]-->",
+            "rationale": "Gate only: ShellShock's response framing identifies its output inside a carved body."
+        },
+        {
+            "id": "SIG_UPLOAD_PART",
+            "kind": "signature",
+            "title": "PHP upload part",
+            "category": "network",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["pcap", "upload"],
+            "scope": "text",
+            "pattern": "filename=[\"']?[^\"';]+\\.(php[0-9]?|phtml|phar)",
+            "rationale": "Gate only: a .php/.phtml/.phar filename in a multipart part unlocks the upload rules."
+        },
+        {
+            "id": "SIG_HTTP_PHP_URI",
+            "kind": "signature",
+            "title": "HTTP request to a PHP script",
+            "category": "network",
+            "points": 0,
+            "severity": "info",
+            "applies_to": ["pcap"],
+            "scope": "bytes",
+            "pattern": "(GET|POST|HEAD) [^ ]*\\.php[? ]",
+            "rationale": "Gate only: an HTTP request targeting a .php script unlocks the command-parameter rule."
+        }
     ]
 }

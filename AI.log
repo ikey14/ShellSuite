@@ -632,3 +632,258 @@ What was tested:
 - Checked Markdown fences are balanced (72 fences, 456 lines) and `git diff --check` reports no whitespace errors.
 - Verified the installed entry point prints `shellsuite 0.1.0`.
 - Command examples were cross-checked against the CLI help output.
+
+[2026-11-17 15:33] Task: move filter logic to shellsuite/filters.py (AGENTS.md section 3).
+
+What was done:
+- Created `shellsuite/filters.py` with `FILTER_OPS`, `FilterError`, `parse()` and `matches()` moved verbatim from `shellshock/manager/filters.py`; docstring now names both modules.
+- Reduced `shellshock/manager/filters.py` to a single re-export line, so `registry.py`, `sessions.py`, the GUI panels and `tests/test_filters.py` keep importing the same module untouched.
+- No caller changed; `shellblock` will import `shellsuite.filters` directly in new code.
+
+What was tested:
+- `python -m unittest tests.test_filters -v` -> 6 tests, OK.
+- `python -m unittest discover -s tests` -> 158 tests, 4 failures + 3 errors, identical to the pre-existing ShellShock set (test_crypto x3, test_creator x1, test_manager_client x3).
+- `shellsuite shock manage list shells --filter "mode == plain"` -> filtered listing printed.
+- `shellsuite block --help` -> subcommand still registered.
+- Searched `shellsuite/` for `shellshock`: only strings/docstrings (`config.MODULE_NAMES`, protocol channel names), no imports.
+
+Notes:
+- Editable install needs no reinstall: `shellsuite/` package was already mapped.
+
+[2026-11-18 13:53] Task: add shellblock/helpers/jsonLoader.py and fix JSON loading paths.
+
+What was done:
+- Created `shellblock/helpers/__init__.py` and `shellblock/helpers/jsonLoader.py` with `load_json(name)`: resolves relative names against the `shellblock/` package root (so `info.json`/`rules.json` no longer depend on the working directory), opens with a context manager and UTF-8.
+- `detect.py` still uses `json.load(open("./info.json"))`; not changed, the helper is ready to replace it.
+
+What was tested:
+- `pip install -e .` after the new package; `shellsuite block --help` still lists the `block` subcommand.
+- From `C:\Users\<user>\Downloads`: `load_json('info.json')['extensions']['php']` -> `['php3', 'php4', 'php4', 'php5', 'php7']`; `load_json('rules.json')` returns the categories list.
+
+Notes:
+- `pyproject.toml` package-data has no `"shellblock" = ["*.json"]` entry yet; needed for non-editable installs to ship `info.json`/`rules.json`.
+
+[2026-11-19 12:09] Task: rewrite detect.py as a pure detect stage and complete the type table.
+
+What was done:
+- `shellblock/detect.py`: `detect(path)` returns a frozen `Detection(extension, extension_type, detected_type, type_mismatch, size)`; bounded header read with `with`, `unknown` fallback, reverse ext->type map, mismatch only when the extension claims a known type and the magic differs.
+- PHP is gated by its magic `3c3f706870` (`<?php`) instead of `3c3f`; a php-ish extension with no binary magic still types as `php` so padded/BOM/HTML-first files stay analyzable.
+- `shellblock/info.json`: added GIF (87a/89a), pcap (4 byte orders), pcapng; PHP magic changed to `<?php`; added `phtml` and `pcapng` extensions; removed the duplicate `php4`.
+- `pyproject.toml`: `"shellblock" = ["*.json"]` package-data so `info.json` ships on non-editable installs.
+- Removed import-time demo calls, prints and the leaked file handle.
+
+What was tested:
+- Reinstalled (`pip install -e .`); `shellsuite block --help` still registers.
+- Synthetic corpus via `detect()`: jpg/png/gif87/gif89/pcap/pcapng clean -> mismatch=False; PNG as .jpg -> mismatch=True; `.php` with `<?php`, short tag, 2 KB padding and BOM -> php, no mismatch; `<?php` bytes as .jpg -> detected php + mismatch; `.txt` with PNG bytes and extensionless JPEG -> mismatch=False.
+- `python -m unittest discover -s tests` -> 158 tests, same pre-existing 4 failures + 3 errors (test_crypto, test_creator, test_manager_client).
+
+Notes:
+- Windows Defender blocks reading a temp `.php` file containing `system($_GET[...])` (`OSError: [Errno 22]`); the webshell-pattern checks were run with benign `echo` bodies. Real fixtures may need a Defender exclusion when testing locally.
+
+[2026-11-19 13:18] Task: upgrade rules.json to the section 6.1 shape with the signature (gate) rules.
+
+What was done:
+- `shellblock/rules.json`: added `version` (2026-11-19) and the `categories` object with the six ids/descriptions from section 6.1.
+- Added the 11 signature rules transcribed from section 6.3 (SIG_PHP_TAG, SIG_PHP_SINK_NAME, SIG_PHP_SUPERGLOBAL, SIG_PHP_DECODER, SIG_BASE64_BLOB, SIG_SHELL_FAMILY, SIG_SS_PARAM, SIG_SS_ENVELOPE, SIG_SS_RESPONSE, SIG_UPLOAD_PART, SIG_HTTP_PHP_URI), each `kind: signature`, `points: 0`, `severity: info`, with `scope`, exact `pattern`, `applies_to` and a rationale naming the rules it gates.
+- No structural rules yet; no detector logic added.
+
+What was tested:
+- Throwaway validator: JSON loads, version present, 11 unique ids matching the section 6.3 set, all points 0, every category present in `categories`, every `applies_to` value in {jpeg, png, gif, php, pcap, upload, unknown}, every pattern compiles (text with re.IGNORECASE, bytes case-sensitive).
+- Each pattern matched a realistic sample: `<?php`, `system(`, `$_POST`, `gzinflate(`, a 120-char base64 run, `@eval($_POST[`, `shellshock_auth`, `SSENC`, `<!--SSB-->`, `filename="shell.php"`, `GET /uploads/shell.php?cmd=id`.
+- `shellsuite block --help` -> exit 0.
+
+Notes:
+- Pattern strings are the literal ones from section 6.3; SIG_PHP_TAG fires on `<?php`, `<?=` and `<? `.
+- `block rules --validate` does not exist yet (rules.py pending), so validation was done with a temporary script, not the CLI.
+
+[2026-11-19 17:11] Task: create shellblock/result.py (Contract A dataclasses, evidence escaping, sort key).
+
+What was done:
+- `shellblock/result.py`: `escape_evidence(raw)` (0x20-0x7E kept, the rest as `\xNN`, hard 120-character cap counting escapes), frozen `Finding` (rule_id, subject, severity, location, evidence, detail) with `to_dict`, `sort_key(finding, category)` -> (category, location.offset|0, rule_id), frozen `Stage` that omits unused counters, and `Result` with `to_dict`/`to_json` (schema 1, tool shellblock/0.1.0).
+- No file I/O and no import of `rules.py`; `store.py` will own writing, the pipeline will sort before building the result.
+
+What was tested:
+- Throwaway script: printable and binary evidence -> `<?php system($_GET['c']); ?>` and `<?php\x00\xff\x7f ok`; 200 NUL bytes and 200 ASCII chars both cap at exactly 120 characters.
+- `sort_key` with offset 42/7 and with a location lacking `offset` (falls back to 0).
+- `Result.to_json()` -> JSON keys in contract order (schema, tool, target, stages, findings, notes, errors), tool `{shellblock, 0.1.0}`, detect stage without counters, signature stage with `rules`/`matched`.
+- Two `to_json()` calls on the same Result are byte-identical; `json.loads` round-trips.
+
+Notes:
+- `detail` is always emitted (`{}` for gate findings); evidence hex is lowercase.
+
+[2026-11-19 17:59] Task: implement rules.py loading/validation and wire block rules --validate/--json.
+
+What was done:
+- `shellblock/rules.py`: kept `LoadRules()`, added `ValidateRules(data=None) -> list[str]` with table-level checks (object, version, categories mapping, rules list) and per-rule checks: empty/duplicate id, kind in {signature, structural}, required fields per kind, category exists, integer points >= 0 with points 0 reserved for signature rules (per the updated AGENTS.md item 6), applies_to a non-empty list of known types (pcapng included), and signature scope/pattern compiled exactly as the matcher will (bytes+ASCII, text+IGNORECASE). DETECTORS is cross-checked both ways. Helpers `_is_type_list` and `_compile_problem` keep it testable.
+- `shellblock/cli.py`: `_CmdRules` now takes `ValidateRules()`'s error list, prints `error: ...` to stderr and exits 1 on failure, `rules.json OK` on success; added `--json` (`{"valid", "errors"}` for validation, `{"rules": [...]}` for listing); listing prints `id (kind): title`.
+
+What was tested:
+- `shellsuite block rules --validate` -> `rules.json OK`, exit 0; `--validate --json` -> `{"valid": true, "errors": []}`.
+- Synthetic bad tables through `ValidateRules(data)`: no version, categories as list, rules not a list, missing/unknown kind, empty/missing/duplicate id, unknown category, negative and bool points, structural with points 0, bad/empty applies_to, bad scope, bad regex, non-ASCII bytes pattern, missing pattern, missing structural fields - each produced the expected error.
+- `ValidateRules([])` and `ValidateRules("x")` -> `table: the top level must be a JSON object`.
+- `python -m unittest discover -s tests` -> 158 tests, same pre-existing 4 failures + 3 errors.
+
+Notes:
+- `_CmdRules` returns an exit code now, so `shellsuite block rules` follows the 0/1 contract.
+- Structural validation is dormant until structural rules and DETECTORS entries exist.
+
+[2026-11-19 19:37] Task: signature matcher, analysis pipeline and result store; `block analyze` wired.
+What was done:
+- `shellblock/analyze/signatures.py`: one matcher for every `kind: signature` rule. `run_signatures(buffer, rules)` picks the haystack from `scope` (raw bytes, or a latin-1 decode where one character is exactly one byte, so offsets stay byte offsets), compiles each pattern with the same encoding the validator used (bytes + ASCII, text + IGNORECASE), caches compiled patterns by `(scope, pattern)`, and emits one `Finding` per match: subject `file`, `location.kind=byte_offset`, evidence through `escape_evidence`, `detail={scope, length}`. No per-rule Python, no sorting, no counters.
+- `shellblock/rules.py`: added `signature_rules(detected_type)` - the `kind == signature` + `applies_to` filter the matcher consumes.
+- `shellblock/pipeline.py`: `analyze(path, max_size=64 MB) -> Result`. detect -> one capped read -> signature stage -> sorted findings. It owns the two `Stage` timings (`detect`; `signature` with `rules`/`matched`), the `target` dict (path, name, size from `Detection`, sha256 of the analyzed buffer, extension, detected_type, type_mismatch, UTC `analyzed_at`, `truncated`), the truncation note and the contract ordering (`sort_key` + the `rule_id -> category` map). It writes nothing.
+- `shellblock/store.py`: `result_path(name)` -> `<analysis>/<name>_result.json` (extension kept), `write_result(result) -> Path`, and `_write_atomic` (mkstemp in the target directory + `os.replace`, temp file removed on any exception).
+- `shellsuite/config.py`: `analysis_dir()` as specified in AGENTS section 3.
+- `shellblock/cli.py`: `block analyze --file ... [--json] [--max-size MB]` analyzes, stores and prints either a summary or the result JSON; `--max-size` is megabytes, missing file exits 2.
+- `shellblock/rules.json`: `SIG_PHP_SINK_NAME` was `kind: structural`; corrected to `signature`. The validator was red on it and the signature filter would have skipped the rule permanently.
+What was tested:
+- `shellsuite block analyze --file photo.jpg` (jpeg magic + `<?php system($_GET['c']); ?>` + a `c99shell` tail): 4 findings at offsets 24/30/37/60, `rules=4 matched=4`, exit 0.
+- `shell.php` (`eval($_POST['x'])` + a 160-char base64 literal): 4 findings (SIG_PHP_SINK_NAME @6, SIG_PHP_SUPERGLOBAL @11, SIG_PHP_DECODER @30, SIG_BASE64_BLOB @45 with evidence cut at exactly 120 chars), `rules=7 matched=4`.
+- Clean synthetic jpeg: `matched=0`.
+- `--json` parses (`json.load` -> 4 findings) and two runs on the same file are byte-identical (1836 bytes).
+- `--max-size 1` on a 2 MB file: `truncated=true`, `size` still 2097172, note `file truncated at 1048576 bytes (sha256 covers the analyzed prefix)`, exit 0, the PHP at the tail not reported - the cap doing its job.
+- `block analyze --file nope.jpg`: `error: no such file` on stderr, exit 2.
+- `block rules --validate`: `rules.json OK`, exit 0 (first green run; the SIG_PHP_SINK_NAME fix was required).
+- Results landed in `$SHELLSUITE_HOME/analysis/{photo.jpg,shell.php,large.jpg}_result.json`.
+- `python -m unittest discover -s tests`: 158 tests, same pre-existing 4 failures + 3 errors as the two previous entries (test_crypto x3, test_creator x1, test_manager_client x3); nothing new.
+Notes:
+- Only `detect` and `signature` are emitted; the `static` stage joins when `image_static`/`php_static` exist rather than shipping a fake `skipped`.
+- `sha256` covers the analyzed prefix when the file is capped and `notes[]` says so; hashing the whole file would contradict `--max-size`.
+- `matched` counts distinct rule ids, not findings.
+- `signature_rules()` re-reads `rules.json` and the pipeline rebuilds the id->category map, so one analysis reads the table twice. Cheap now; cache it when `capture_static` starts recursing per carved upload.
+- `--max-size` is not validated: argparse accepts 0 or a negative MB value.
+
+[2026-11-21 13:55] Task: image static stage (JPEG/PNG/GIF walkers, 7 structural rules, static stage in the pipeline).
+What was done:
+- `shellblock/analyze/context.py`: `Region(start, end, kind, name)` and `Context(buffer, detection, path, errors, image_regions)`. The context memoises the walk, so the seven rules share one traversal instead of seven.
+- `shellblock/analyze/image_static.py`: three walkers (JPEG markers until SOS then `find` the first EOI; PNG chunk chain until IEND; GIF blocks, extensions and trailer) that only read framing bytes and never decode the image. Regions are `segment` (JPEG COM/APPn, GIF comment), `chunk` (PNG tEXt/iTXt/zTXt), `trailing` (after the trailer) and `prefix` (before the signature).
+- Seven detectors, `(ctx, rule) -> list[Finding]`: `find_php_before_soi`, `find_hidden_php`, `find_script_in_segment`, `find_zip_after_eoi`, `find_trailing_data`, `find_type_mismatch`, `find_double_extension`. Nothing is decided by extension: `find_php_before_soi` looks for the tag and then for image magic after it, so a `.php` file with no picture produces nothing.
+- `shellblock/rules.json`: the seven structural rules from section 6.3 with points 50/45/20/35/15/20/10, severities critical/critical/high/high/medium/medium/low, `applies_to`, and a rationale each.
+- `shellblock/rules.py`: `DETECTORS` populated with the seven detectors; added `structural_rules(detected_type)`, the twin of `signature_rules`.
+- `shellblock/pipeline.py`: third stage. Builds the `Context`, runs every applicable detector, extends `findings`, emits `Stage("static", "ok", ms, rules, matched, units=1)` or `skipped` when no structural rule applies, and copies `context.errors` into `Result.errors`.
+- Evidence is clamped to the region that produced it, so a COM segment yields `<?php system($_GET['c']); ?>` and not 120 bytes of following JPEG data.
+What was tested:
+- `block rules --validate` -> `rules.json OK` (all seven structural ids have a detector and vice versa).
+- Fixture sweep, static stage only: `hidden_comment.jpg` `IMG_HIDDEN_PHP@6` (COM), `hidden_trailing.jpg` `@15437` (trailing), `polyglot.gif` `@9145` (GIF comment), `php_before_soi.jpg` `IMG_PHP_BEFORE_SOI@0` + `TYPE_MAGIC_MISMATCH@0`, `double.php.jpg` `IMG_HIDDEN_PHP@15436` + `DOUBLE_EXTENSION@0`, `fake.jpg` `TYPE_MAGIC_MISMATCH@0` only (no PHP in it), `zip_after_eoi.jpg` `IMG_ZIP_AFTER_EOI@15436`, `script_comment.jpg` `IMG_SCRIPT_IN_SEGMENT@6`, `trailing_text.jpg` `IMG_TRAILING_DATA@15436`.
+- Clean controls: `clean.jpg/png/gif` and a real 640x480 photo from picsum -> 0 findings, 0 errors, `static ok 7/0`.
+- `truncated.jpg` (JPEG cut at 2 KB) -> no traceback, `errors: ["JPEG entropy data without EOI"]`, exit 0.
+- CLI end to end: `block analyze --file hidden_comment.jpg` lists the four findings with offsets and writes the result file.
+- `python -m unittest discover -s tests` -> 158 tests, same pre-existing 4 failures + 3 errors.
+Notes:
+- `location.kind` for a trailing payload is `byte_offset` with `segment: "trailing"`: section 6.3 says `kind=trailing` but invariant 6 does not allow that value, so the label lives in `segment`.
+- Specificity is enforced by `find_trailing_data` skipping tails that are PHP or ZIP, so a payload tail scores 45/35 and not also 15.
+- `php_before_soi.jpg` reports both `IMG_PHP_BEFORE_SOI` and `TYPE_MAGIC_MISMATCH`: two different facts (content position, and extension vs magic), different categories.
+- JPEG EOI is located with `find` after SOS, not `rfind`: valid entropy data byte-stuffs `FF`, so the first `FFD9` is the real trailer, while `rfind` would be fooled by a polyglot tail containing `FFD9`.
+- Walkers are O(number of blocks); the JPEG entropy stream is skipped, not scanned.
+
+[2026-11-22 12:23] Task: PHP static analysis (14 structural rules) on tree-sitter.
+
+What was done:
+- Added `tree-sitter` and `tree-sitter-php` to `pyproject.toml` and reinstalled.
+- `shellblock/analyze/context.py`: `php_model` cache field (`TYPE_CHECKING` import, same lazy pattern as `image_regions`).
+- New `shellblock/analyze/php_static.py`: one parse per file into a `PhpModel` (nodes, call sites, one-hop symbol table, HTTP_* key variables, auth-result variables, user functions whose body reaches a sink) plus 14 detectors.
+  - AST: eval/assert, OS exec (including backticks), dynamic calls (`$f()`, `call_user_func`, `array_map('assert', ...)`), include/require, writes, sink-without-source, decoder ladder by node containment, strict auth gate, request header sources, one-liner.
+  - Raw bytes: family fingerprints, base64 >= 120, max Shannon entropy over 256-byte windows > 5.5, padded `<?php`.
+  - Taint resolver: superglobals (bare and subscripted), `$_SERVER` only for HTTP_* (including `$__ss_key = "HTTP_" . ...`), `php://input`, `getallheaders()`, concatenation, conditional, casts, decoder results, one-hop variables; `isset`/`empty` do not propagate.
+  - Auth gate: `hash("sha256"/"md5"/"sha1", input)` (or strcmp/hash_equals) against a matching-length hex digest, result variable wired to an `if` whose body reaches a sink, including through wrapper functions (`__ss_run`).
+- `shellblock/rules.json`: version 2026-11-22; 14 PHP structural rules with points/tiers from section 6.3, `applies_to: ["php"]` only (no PHP rules on images, per decision).
+- `shellblock/rules.py`: 14 new `DETECTORS` entries.
+
+What was tested:
+- `block rules --validate` -> `rules.json OK`; `block rules` lists 32 rules.
+- In-memory cases: direct/indirect eval, OS exec (direct and concatenated), literal sink -> only PHP_EXEC_SINK_ONLY, include, write, ladder (and no ladder for sibling decoders), padded tag, China Chopper -> family + eval, header source, strict auth gate (and plain `if ($_POST == "admin")` does not fire it), bare `$_POST` and tainted callable for dynamic calls, `php://input`, base64 blob, entropy window 7.2, clean PDO page -> no findings, comment/string mentions -> no findings.
+- All 11 generated shells analysed: every one gets PHP_OS_EXEC_OF_INPUT; auth/encrypted get PHP_AUTH_GATE; header vector gets PHP_REQUEST_HEADER_SOURCE.
+- JPEG with PHP in COM: only image rules selected and IMG_HIDDEN_PHP fires; no PHP rules run.
+- CLI `block analyze` on auth_post.php: static stage rules=17, matched=2 (OS exec + auth gate); auth gate evidence is the full hash comparison.
+- `python -m unittest discover -s tests` -> 158 tests, same pre-existing 4 failures + 3 errors.
+
+Notes:
+- No unit tests added (manual testing by the student).
+- `PHP_HIGH_ENTROPY` runs only for detected type `php`; images never reach it.
+- The auth gate requires a digest-length hex literal; a plaintext credential comparison is intentionally not matched.
+
+[2026-11-23 12:11] Task: pcap packet filtering (tshark/pyshark), HTTP model, carving and upload analysis.
+
+What was done:
+- `pyproject.toml`: added `pyshark>=0.6`.
+- New `shellblock/analyze/capture_static.py`: `HttpMessage`/`TlsFlow`/`CaptureModel`; HTTP pass and TLS handshake pass through pyshark with display filters; optional repeatable `--host` becomes `ip.addr==...`; frame accounting through `capinfos -c -M`; `--dump-json` writes the normalised model to the analysis dir; carving via `tshark --export-objects`, temp dir deleted by default, `--keep-objects [DIR]` keeps it; multipart bodies are split into their file parts and analysed by the file pipeline, other objects are analysed whole, all with `subject="upload:<name>"`; carved pcaps are not re-entered as captures (`allow_capture=False`).
+- `PCAP_TLS_OPAQUE` structural rule (1 point, network, info, pcap only) and detector: one finding per encrypted flow, SNI in evidence/detail, SNI also in `notes[]`.
+- `result.Stage` gained optional `frames` and `kept`; capture stage reports total frames and the HTTP subset. `pipeline.analyze` dispatches pcap to the capture path; `cli.py` gained `--host`, `--dump-json`, `--keep-objects` and maps `CaptureError` to exit 2.
+- `analyze/context.py`: `capture_model` field.
+
+What was tested (synthetic capture built with text2pcap-style framing plus a real TLS ClientHello):
+- 11 frames, HTTP filter kept 4 (GET, response, multipart POST, response); TLS pass found `example.com` on stream 2.
+- No host filter: upload part `shell.php` extracted from the multipart body and analysed -> `PHP_EXEC_SINK_ONLY`, `SIG_PHP_SINK_NAME`, `PHP_ONE_LINER` with subject `upload:shell.php`; `PCAP_TLS_OPAQUE` for the encrypted flow.
+- `--host 10.0.0.3` -> kept 2, only the upload; `--host 10.0.0.2` -> kept 2, only the TLS finding; no cross-host objects.
+- `--dump-json` produced `capture.pcap_http.json`; `--keep-objects` kept `upload.php`, `upload(1).php`, `shell.php%3fcmd=id` and the extracted `_part0_shell.php`.
+- With tshark/capinfos off PATH: `error: capinfos not found; install Wireshark ...`, exit 2.
+- `block rules --validate` -> OK; 158 tests, same pre-existing 4 failures + 3 errors.
+
+Notes:
+- `--export-objects` ignores `-Y`, so host-filtered carving first writes a `tcp.stream==N` filtered pcap, then exports from it.
+- Multipart bodies are named after the request URI by tshark, so the parts are parsed in Python; the declared filename becomes the subject.
+- Capture signature stage is still `skipped`; pcap rules come next. No tests added.
+
+[2026-11-26 12:04] Task: pcap static analysis (capture signature stage + seven communication rules).
+
+What was done:
+- `capture_static.py`: `HttpMessage` now carries frame, timestamp, TCP payload length and the raw request/status head rebuilt from `tcp.payload`; new `BodyInfo`, `UploadInfo`, `ResponseInfo` and `CaptureModel` lists for bodies/uploads/responses (all in `--dump-json`).
+- One export run, objects correlated by (normalised name, exact body size, request/response role); duplicate names/sizes are assigned one-to-one in packet order. Unmatched objects are counted in `notes[]`.
+- Multipart envelopes are parsed into file parts; each part is analysed through the file pipeline, then `SIG_UPLOAD_PART` is scanned on the envelope and missing body rules are applied only when the file stage did not already select them (detected type not in `applies_to`). No finding-level dedupe.
+- Capture signature stage (`rules=5`): wire heads scanned with the pcap signature rules, remapped to `subject=flow:...`, `location.kind="http"`, detail stream/frame/URI. Body scans use byte offsets.
+- Seven structural rules added: PCAP_DISGUISED_UPLOAD 50, PCAP_PHP_UPLOAD 40, PCAP_SHELL_REQUEST 45, PCAP_COMMAND_PARAM 20, PCAP_SHELL_RESPONSE 18, PCAP_MISMATCHED_UPLOAD_RESPONSE 15, PCAP_BEACONING 10. Markers include `uid=\d+(`, `root:x:0:0`, `Index of /`, `[To Parent Directory]` and `ls -l` permission lines; `www-data` only fires with a companion `.php` + cmd/shell/ShellShock signal; `Directory listing for` dropped. Beaconing: >=5 requests, length spread <=16, CV <=0.2.
+- `rules.json` version 2026-11-26; `rules.py` DETECTORS entries.
+
+What was tested (synthetic capture, 41 frames):
+- Signature stage: 5 rules, 4 matched (SIG_SS_PARAM, SIG_SS_ENVELOPE, SIG_UPLOAD_PART, SIG_HTTP_PHP_URI).
+- Static stage: 9 rules, 8 matched. Observed PCAP_COMMAND_PARAM, PCAP_SHELL_REQUEST (cookie envelope + uploaded payload), PCAP_PHP_UPLOAD, PCAP_DISGUISED_UPLOAD (photo.jpg with PHP bytes), PCAP_MISMATCHED_UPLOAD_RESPONSE, PCAP_SHELL_RESPONSE (`uid=33(`), PCAP_BEACONING (5 x /api/status, CV 0.0), PCAP_TLS_OPAQUE.
+- `--host 10.0.0.3` kept 2 of 41 frames and reported only that stream's upload + response; no cross-host objects.
+- `block rules --validate` OK (40 rules); compile OK; 158 tests, same pre-existing 4 failures + 3 errors.
+- Object/stream correlation produced no unmatched objects on the synthetic capture after one-to-one assignment.
+
+Notes:
+- No unit tests added.
+- `tcp.payload` is used for raw headers because pyshark collapses repeated `http.request.line` values to the first header.
+
+[2026-11-26 17:19] Task: fix the body head/tail truncation bug in capture_static.py.
+
+What was done:
+- `_SAMPLE_BYTES` is 32768 (32 KB head + 32 KB tail).
+- `_tail` now returns the last `min(SAMPLE, size - SAMPLE)` bytes, or "" when the body fits in the head, so head and tail never overlap.
+- `_body_bytes` returns the head alone for bodies up to one sample, and head + non-overlapping tail above that; bodies up to 2x the sample are reconstructed in full, larger ones keep both ends with a documented middle gap.
+- `truncated` remains "middle bytes were dropped", true only above 2x the sample.
+
+What was tested:
+- Sizes 10 KB, 32 KB, 32 KB+1, 40 KB, 64 KB, 100 KB: head/tail lengths are 10000/0, 32768/0, 32768/1, 32768/7232, 32768/32768, 32768/32768; no overlap in any case.
+- Reconstructed content equals the original for every size up to 64 KB; at 100 KB it equals first 32 KB + last 32 KB.
+- Synthetic capture still reports PCAP_SHELL_RESPONSE and PCAP_MISMATCHED_UPLOAD_RESPONSE after the change.
+
+Notes:
+- `truncated` is now purely informational about the middle gap; `_body_bytes` no longer relies on it.
+
+[2026-11-26 18:42] Task: capture path review fixes (blockers, result contract, rule semantics).
+
+What was done:
+- `analyze/capture_static.py`: `_open_capture` also catches `RuntimeError` / `AttributeError`, so pyshark's Python 3.14 failures (`get_event_loop`, `set_child_watcher`) become `CaptureError` and exit 2 instead of a traceback.
+- `detect.py` + `pipeline.py`: new `detect(path, extension_claims=...)` and `pipeline.analyze(..., from_body=...)`. A body carved whole out of a capture is typed by magic alone (no extension fallback, no mismatch claim); multipart parts keep the claim because the filename is the attacker's.
+- `info.json` + `pipeline.analyze`: `pcapng` magic added and refused with "save it as Wireshark/tcpdump pcap", exit 2.
+- `capture_static.py`: `--dump-json` now runs after `_collect_objects`, so `bodies` / `uploads` / `responses` are no longer written empty.
+- `capture_static.py`: `BodyInfo` / `UploadInfo` / `ResponseInfo` carry `frame`; every `upload:` finding carries `detail {frame, stream, role, object}`; `UploadInfo.hidden_payload` records the file stage's own verdict.
+- `capture_static.py`: `stages[].rules` = rules of that kind in the table, `stages[].matched` = how many of them reached `findings[]`; `units` = 1 + TCP conversations + uploaded parts; `signature.duration_ms` measured instead of hardcoded 0; unmatched objects are named in `notes[]` instead of counted.
+- `find_shell_request`: multipart file bodies are no longer scanned as command carriers (the upload rules and the file stage own those bytes).
+- `find_disguised_upload`: also fires when the file stage found a hidden payload inside the declared image.
+- `rules.py`: the "points 0 is reserved for signature rules" check is gone; `rules.json`: `PCAP_TLS_OPAQUE` back to `points: 0`.
+- `AGENTS.md` §4 / §6 / §7 / §8.1 updated to match (counters, directional flow subjects, upload detail, gate semantics, pcapng).
+
+What was tested (`block analyze` with tshark 4.4.19 on Python 3.13.5, plus the 3.14 venv):
+- `PostEncShell_Capture.pcap`: 1097 frames / 48 kept; signature 11 rules 9 matched (2 ms), static 29 rules 6 matched, units 18; 108 findings; every `upload:` finding carries frame/stream/role/object; `PHP_HIGH_ENTROPY` no longer fires on `SSENC1` ciphertext.
+- `--dump-json` on the same capture: `bodies 12, uploads 1, responses 22, messages 48` (was 0/0/0).
+- `mixed.pcap`: `PCAP_SHELL_REQUEST` no longer fires on the multipart body; `PCAP_DISGUISED_UPLOAD` now fires on `photo.jpg` carrying `<?php` in a COM segment; no bogus `TYPE_MAGIC_MISMATCH` on URI-named bodies.
+- `ng.pcapng` -> `error: ng.pcapng is a pcapng capture; save it as Wireshark/tcpdump pcap`, exit 2.
+- Python 3.14 -> exit 2 with the tshark hint; tshark off PATH -> exit 2 with the capinfos hint.
+- File path unchanged: `_part0_PostEncShell.php` still reports 14 findings, `logo.png` none, `dvwaPage.js` only the `eval(` gate.
+- `block rules --validate` OK (40 rules); 154 tests, same pre-existing 4 failures + 5 errors (shellshock crypto/gui/manager_client).
+
+Notes:
+- No tests added (manual testing by the student).
+- Left as open questions in the PR: repeated hits per object (SIG_SS_PARAM x22 on one capture), PHP signature rules still running on `unknown` files (`dvwaPage.js` -> `eval(`), object naming collisions when a request and a response share a URI.

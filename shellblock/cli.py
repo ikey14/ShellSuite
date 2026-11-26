@@ -7,31 +7,119 @@ import json
 import sys
 from pathlib import Path
 
-from shellsuite import config
-from shellsuite.protocol import contract
-from shellshock.creator import generator
-from shellshock.creator.spec import WebShellSpec
+from shellblock import pipeline, store
+from shellblock.analyze.capture_static import CaptureError
+from shellblock.result import Result
 
-#For some reason this won't work with just "creator", it has to be ".creator".
-# from .creator import drivers
-# from . import uploader
-# from .manager import client, registry, sessions, terminal
+from shellblock.rules import LoadRules, ValidateRules
+from shellsuite import config
 
 # The word the user types after `shellsuite` (the package is still `shellshock`).
 COMMAND = "block"
 
-def _CmdTest(args: argparse.Namespace):
-    if(args.serious):
-        print("Here to establish cli file")
-    else:
-        print("Testing")
+def _CmdRules(args: argparse.Namespace) -> int:
+    if args.validate:
+        errors = ValidateRules()
+        if args.json:
+            print(json.dumps({"valid": not errors, "errors": errors}, indent=2))
+            return 0 if not errors else 1
+        if errors:
+            for error in errors:
+                print(f"error: {error}", file=sys.stderr)
+            return 1
+        print("rules.json OK")
+        return 0
+
+    rules = LoadRules()
+    if args.json:
+        print(json.dumps({"rules": rules}, indent=2))
+        return 0
+    for rule in rules:
+        print(f"{rule['id']} ({rule['kind']}): {rule['title']}")
+    return 0
+
+
+def _CmdAnalyze(args: argparse.Namespace) -> int:
+    path = Path(args.file).expanduser()
+
+    if not path.is_file():
+        print(f"error: no such file: {path}", file=sys.stderr)
+        return 2
+    
+    try:
+        result = pipeline.analyze(
+            path,
+            max_size=args.max_size * 1024 * 1024,
+            hosts=args.host,
+            keep_objects=args.keep_objects,
+            dump_json=args.dump_json,
+        )
+    except CaptureError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    saved = store.write_result(result)
+    
+    if args.json:
+        print(result.to_json())
+        return 0
+    
+    _PrintSummary(result, saved)
+    return 0
+
+
+def _PrintSummary(result: Result, saved: Path) -> None:
+    target = result.target
+    suffix = " (truncated)" if target["truncated"] else ""
+
+    print(f"{target['name']}: {target['detected_type']}, {target['size']} bytes{suffix}")
+
+    for stage in result.stages:
+        if stage.frames is not None:
+            print(f"  frames: {stage.kept or 0} of {stage.frames} kept for analysis")
+    
+    if target["type_mismatch"]:
+        print(f"  extension .{target['extension']} contradicts the magic bytes")
+    
+    if not result.findings:
+        print("  no findings")
+    
+    for finding in result.findings:
+        offset = finding.location.get("offset", 0)
+        print(f"  {finding.rule_id:<22} @{offset:<7} {finding.evidence}")
+    
+    for note in result.notes:
+        print(f"note: {note}", file=sys.stderr)
+    
+    print(f"result: {saved}")
+
 
 def register_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(COMMAND, help="webshell detection and risk scoring")
     actions = parser.add_subparsers(dest="action", metavar="<action>")
 
-    
-    test = actions.add_parser("test", help = "Don't worry, I won't be here for long")
-    test.add_argument("--serious", action = "store_true", help = "A bit more serious")
-    test.set_defaults(handler = _CmdTest)
+    rules = actions.add_parser("rules", help = "list the rules applied on analysis")
+    rules.add_argument("--validate", action = "store_true", help = "validate the rules")
+    rules.add_argument("--json", action = "store_true", help = "machine-readable JSON")
+    rules.set_defaults(handler = _CmdRules)
+
+    analyze = actions.add_parser("analyze", help="analyse one file and write its result")
+    analyze.add_argument("--file", required=True, help="file to analyse")
+    analyze.add_argument("--json", action="store_true", help="print the result JSON")
+    analyze.add_argument(
+        "--max-size", type=int, default=64, metavar="MB",
+        help="read at most MB megabytes (default 64)",
+    )
+    analyze.add_argument(
+        "--host", action="append", default=[], metavar="IP",
+        help="only analyse packets to/from IP (repeatable)",
+    )
+    analyze.add_argument(
+        "--dump-json", action="store_true",
+        help="save the normalised HTTP/TLS capture model",
+    )
+    analyze.add_argument(
+        "--keep-objects", nargs="?", const=True, default=None, metavar="DIR",
+        help="keep the objects carved from HTTP bodies (optionally in DIR)",
+    )
+    analyze.set_defaults(handler = _CmdAnalyze)
 
