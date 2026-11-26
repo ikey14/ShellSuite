@@ -36,13 +36,22 @@ class Detection:
     size: int
 
 
-def detect(path: Path) -> Detection:
-    """Return the claimed type, the detected type and the mismatch fact."""
+def detect(path: Path, *, extension_claims: bool = True) -> Detection:
+    """Return the claimed type, the detected type and the mismatch fact.
+
+    ``extension_claims`` says whether the file name is a claim worth judging.
+    Parts carved out of a capture carry the uploaded filename, so they keep the
+    claim; whole bodies are named after the request URI by tshark, so they pass
+    ``False`` and are typed by magic alone — a response to ``shell.php`` is not
+    PHP source and its name contradicts nothing.
+    """
     header = _read_header(path)
     extension = path.suffix.lower().lstrip(".")
-    extension_type = _EXTENSION_TYPES.get(extension, "unknown")
+    extension_type = (
+        _EXTENSION_TYPES.get(extension, "unknown") if extension_claims else "unknown"
+    )
     detected_type = _match_magic(header)
-    if detected_type == "unknown" and extension_type == "php":
+    if extension_claims and detected_type == "unknown" and extension_type == "php":
         detected_type = "php"
     return Detection(
         extension=extension,

@@ -143,10 +143,6 @@ def ValidateRules(data: dict | None = None) -> list[str]:
             points = rule["points"]
             if not isinstance(points, int) or isinstance(points, bool) or points < 0:
                 errors.append(f"{label}: 'points' must be an integer >= 0")
-            elif points == 0 and kind != "signature":
-                errors.append(
-                    f"{label}: points 0 is reserved for signature rules"
-                )
 
         if "applies_to" in rule and not _is_type_list(rule["applies_to"]):
             errors.append(f"{label}: 'applies_to' is not a list of known types")

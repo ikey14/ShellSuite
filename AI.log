@@ -860,3 +860,30 @@ What was tested:
 
 Notes:
 - `truncated` is now purely informational about the middle gap; `_body_bytes` no longer relies on it.
+
+[2026-11-26 18:42] Task: capture path review fixes (blockers, result contract, rule semantics).
+
+What was done:
+- `analyze/capture_static.py`: `_open_capture` also catches `RuntimeError` / `AttributeError`, so pyshark's Python 3.14 failures (`get_event_loop`, `set_child_watcher`) become `CaptureError` and exit 2 instead of a traceback.
+- `detect.py` + `pipeline.py`: new `detect(path, extension_claims=...)` and `pipeline.analyze(..., from_body=...)`. A body carved whole out of a capture is typed by magic alone (no extension fallback, no mismatch claim); multipart parts keep the claim because the filename is the attacker's.
+- `info.json` + `pipeline.analyze`: `pcapng` magic added and refused with "save it as Wireshark/tcpdump pcap", exit 2.
+- `capture_static.py`: `--dump-json` now runs after `_collect_objects`, so `bodies` / `uploads` / `responses` are no longer written empty.
+- `capture_static.py`: `BodyInfo` / `UploadInfo` / `ResponseInfo` carry `frame`; every `upload:` finding carries `detail {frame, stream, role, object}`; `UploadInfo.hidden_payload` records the file stage's own verdict.
+- `capture_static.py`: `stages[].rules` = rules of that kind in the table, `stages[].matched` = how many of them reached `findings[]`; `units` = 1 + TCP conversations + uploaded parts; `signature.duration_ms` measured instead of hardcoded 0; unmatched objects are named in `notes[]` instead of counted.
+- `find_shell_request`: multipart file bodies are no longer scanned as command carriers (the upload rules and the file stage own those bytes).
+- `find_disguised_upload`: also fires when the file stage found a hidden payload inside the declared image.
+- `rules.py`: the "points 0 is reserved for signature rules" check is gone; `rules.json`: `PCAP_TLS_OPAQUE` back to `points: 0`.
+- `AGENTS.md` §4 / §6 / §7 / §8.1 updated to match (counters, directional flow subjects, upload detail, gate semantics, pcapng).
+
+What was tested (`block analyze` with tshark 4.4.19 on Python 3.13.5, plus the 3.14 venv):
+- `PostEncShell_Capture.pcap`: 1097 frames / 48 kept; signature 11 rules 9 matched (2 ms), static 29 rules 6 matched, units 18; 108 findings; every `upload:` finding carries frame/stream/role/object; `PHP_HIGH_ENTROPY` no longer fires on `SSENC1` ciphertext.
+- `--dump-json` on the same capture: `bodies 12, uploads 1, responses 22, messages 48` (was 0/0/0).
+- `mixed.pcap`: `PCAP_SHELL_REQUEST` no longer fires on the multipart body; `PCAP_DISGUISED_UPLOAD` now fires on `photo.jpg` carrying `<?php` in a COM segment; no bogus `TYPE_MAGIC_MISMATCH` on URI-named bodies.
+- `ng.pcapng` -> `error: ng.pcapng is a pcapng capture; save it as Wireshark/tcpdump pcap`, exit 2.
+- Python 3.14 -> exit 2 with the tshark hint; tshark off PATH -> exit 2 with the capinfos hint.
+- File path unchanged: `_part0_PostEncShell.php` still reports 14 findings, `logo.png` none, `dvwaPage.js` only the `eval(` gate.
+- `block rules --validate` OK (40 rules); 154 tests, same pre-existing 4 failures + 5 errors (shellshock crypto/gui/manager_client).
+
+Notes:
+- No tests added (manual testing by the student).
+- Left as open questions in the PR: repeated hits per object (SIG_SS_PARAM x22 on one capture), PHP signature rules still running on `unknown` files (`dvwaPage.js` -> `eval(`), object naming collisions when a request and a response share a URI.

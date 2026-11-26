@@ -21,13 +21,25 @@ def analyze(
     keep_objects: str | bool | None = None,
     dump_json: bool = False,
     allow_capture: bool = True,
+    from_body: bool = False,
 ) -> Result:
     """Executes the applicable analysis stages (magic detection, signature matching, static analysis) to the 
     file on the path, and returns the result in Result format
+
+    ``from_body`` marks a body carved whole out of a capture: tshark names those
+    after the request URI, so the name is not a claim and the type comes from the
+    magic bytes alone (see ``detect``).
     """
     started = time.perf_counter()
-    detection = detect(path)
+    detection = detect(path, extension_claims=not from_body)
     detect_ms = _elapsed(started)
+
+    if detection.detected_type == "pcapng":
+        from shellblock.analyze.capture_static import CaptureError
+
+        raise CaptureError(
+            f"{path.name} is a pcapng capture; save it as Wireshark/tcpdump pcap"
+        )
 
     if allow_capture and detection.detected_type == "pcap":
         from shellblock.analyze import capture_static
