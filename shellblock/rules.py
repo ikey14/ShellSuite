@@ -31,6 +31,13 @@ DETECTORS: dict = {
     "PHP_ONE_LINER": php_static.find_one_liner,
     "PHP_PADDED_TAG": php_static.find_padded_tag,
     "PCAP_TLS_OPAQUE": capture_static.find_tls_opaque,
+    "PCAP_DISGUISED_UPLOAD": capture_static.find_disguised_upload,
+    "PCAP_PHP_UPLOAD": capture_static.find_php_upload,
+    "PCAP_SHELL_REQUEST": capture_static.find_shell_request,
+    "PCAP_COMMAND_PARAM": capture_static.find_command_param,
+    "PCAP_SHELL_RESPONSE": capture_static.find_shell_response,
+    "PCAP_MISMATCHED_UPLOAD_RESPONSE": capture_static.find_mismatched_upload_response,
+    "PCAP_BEACONING": capture_static.find_beaconing,
 }
 
 _RULES: list = []

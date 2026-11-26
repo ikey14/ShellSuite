@@ -823,3 +823,40 @@ Notes:
 - `--export-objects` ignores `-Y`, so host-filtered carving first writes a `tcp.stream==N` filtered pcap, then exports from it.
 - Multipart bodies are named after the request URI by tshark, so the parts are parsed in Python; the declared filename becomes the subject.
 - Capture signature stage is still `skipped`; pcap rules come next. No tests added.
+
+[2026-11-26 12:04] Task: pcap static analysis (capture signature stage + seven communication rules).
+
+What was done:
+- `capture_static.py`: `HttpMessage` now carries frame, timestamp, TCP payload length and the raw request/status head rebuilt from `tcp.payload`; new `BodyInfo`, `UploadInfo`, `ResponseInfo` and `CaptureModel` lists for bodies/uploads/responses (all in `--dump-json`).
+- One export run, objects correlated by (normalised name, exact body size, request/response role); duplicate names/sizes are assigned one-to-one in packet order. Unmatched objects are counted in `notes[]`.
+- Multipart envelopes are parsed into file parts; each part is analysed through the file pipeline, then `SIG_UPLOAD_PART` is scanned on the envelope and missing body rules are applied only when the file stage did not already select them (detected type not in `applies_to`). No finding-level dedupe.
+- Capture signature stage (`rules=5`): wire heads scanned with the pcap signature rules, remapped to `subject=flow:...`, `location.kind="http"`, detail stream/frame/URI. Body scans use byte offsets.
+- Seven structural rules added: PCAP_DISGUISED_UPLOAD 50, PCAP_PHP_UPLOAD 40, PCAP_SHELL_REQUEST 45, PCAP_COMMAND_PARAM 20, PCAP_SHELL_RESPONSE 18, PCAP_MISMATCHED_UPLOAD_RESPONSE 15, PCAP_BEACONING 10. Markers include `uid=\d+(`, `root:x:0:0`, `Index of /`, `[To Parent Directory]` and `ls -l` permission lines; `www-data` only fires with a companion `.php` + cmd/shell/ShellShock signal; `Directory listing for` dropped. Beaconing: >=5 requests, length spread <=16, CV <=0.2.
+- `rules.json` version 2026-11-26; `rules.py` DETECTORS entries.
+
+What was tested (synthetic capture, 41 frames):
+- Signature stage: 5 rules, 4 matched (SIG_SS_PARAM, SIG_SS_ENVELOPE, SIG_UPLOAD_PART, SIG_HTTP_PHP_URI).
+- Static stage: 9 rules, 8 matched. Observed PCAP_COMMAND_PARAM, PCAP_SHELL_REQUEST (cookie envelope + uploaded payload), PCAP_PHP_UPLOAD, PCAP_DISGUISED_UPLOAD (photo.jpg with PHP bytes), PCAP_MISMATCHED_UPLOAD_RESPONSE, PCAP_SHELL_RESPONSE (`uid=33(`), PCAP_BEACONING (5 x /api/status, CV 0.0), PCAP_TLS_OPAQUE.
+- `--host 10.0.0.3` kept 2 of 41 frames and reported only that stream's upload + response; no cross-host objects.
+- `block rules --validate` OK (40 rules); compile OK; 158 tests, same pre-existing 4 failures + 3 errors.
+- Object/stream correlation produced no unmatched objects on the synthetic capture after one-to-one assignment.
+
+Notes:
+- No unit tests added.
+- `tcp.payload` is used for raw headers because pyshark collapses repeated `http.request.line` values to the first header.
+
+[2026-11-26 17:19] Task: fix the body head/tail truncation bug in capture_static.py.
+
+What was done:
+- `_SAMPLE_BYTES` is 32768 (32 KB head + 32 KB tail).
+- `_tail` now returns the last `min(SAMPLE, size - SAMPLE)` bytes, or "" when the body fits in the head, so head and tail never overlap.
+- `_body_bytes` returns the head alone for bodies up to one sample, and head + non-overlapping tail above that; bodies up to 2x the sample are reconstructed in full, larger ones keep both ends with a documented middle gap.
+- `truncated` remains "middle bytes were dropped", true only above 2x the sample.
+
+What was tested:
+- Sizes 10 KB, 32 KB, 32 KB+1, 40 KB, 64 KB, 100 KB: head/tail lengths are 10000/0, 32768/0, 32768/1, 32768/7232, 32768/32768, 32768/32768; no overlap in any case.
+- Reconstructed content equals the original for every size up to 64 KB; at 100 KB it equals first 32 KB + last 32 KB.
+- Synthetic capture still reports PCAP_SHELL_RESPONSE and PCAP_MISMATCHED_UPLOAD_RESPONSE after the change.
+
+Notes:
+- `truncated` is now purely informational about the middle gap; `_body_bytes` no longer relies on it.

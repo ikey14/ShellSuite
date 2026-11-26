@@ -1,5 +1,5 @@
 {
-    "version": "2026-11-23",
+    "version": "2026-11-26",
     "categories": {
         "hidden_payload": "code or markup hidden inside a non-code container",
         "code_execution": "code or command execution reachable from request input",
@@ -228,6 +228,76 @@
             "severity": "info",
             "applies_to": ["pcap"],
             "rationale": "An encrypted flow is reported with its SNI, never scored as content: ciphertext cannot be read without keys."
+        },
+        {
+            "id": "PCAP_DISGUISED_UPLOAD",
+            "kind": "structural",
+            "title": "Disguised upload",
+            "category": "network",
+            "points": 50,
+            "severity": "critical",
+            "applies_to": ["pcap"],
+            "rationale": "An image-named upload whose bytes are PHP or contradict the declared image type is a payload wearing a picture."
+        },
+        {
+            "id": "PCAP_PHP_UPLOAD",
+            "kind": "structural",
+            "title": "PHP upload",
+            "category": "network",
+            "points": 40,
+            "severity": "critical",
+            "applies_to": ["pcap"],
+            "rationale": "A multipart part asking for a .php/.phtml/.phar filename is an attempt to drop executable code."
+        },
+        {
+            "id": "PCAP_SHELL_REQUEST",
+            "kind": "structural",
+            "title": "Shell request",
+            "category": "network",
+            "points": 45,
+            "severity": "critical",
+            "applies_to": ["pcap"],
+            "rationale": "A request carrying system()/eval()/assert()/backticks or a ShellShock envelope drives a webshell."
+        },
+        {
+            "id": "PCAP_COMMAND_PARAM",
+            "kind": "structural",
+            "title": "Command parameter",
+            "category": "network",
+            "points": 20,
+            "severity": "medium",
+            "applies_to": ["pcap"],
+            "rationale": "cmd/c/exec/shell/action on a .php path is the command channel of a shell."
+        },
+        {
+            "id": "PCAP_SHELL_RESPONSE",
+            "kind": "structural",
+            "title": "Shell response",
+            "category": "network",
+            "points": 18,
+            "severity": "medium",
+            "applies_to": ["pcap"],
+            "rationale": "Command output or a directory listing in a response proves the request executed."
+        },
+        {
+            "id": "PCAP_MISMATCHED_UPLOAD_RESPONSE",
+            "kind": "structural",
+            "title": "Upload answered with content",
+            "category": "network",
+            "points": 15,
+            "severity": "medium",
+            "applies_to": ["pcap"],
+            "rationale": "An upload answered 200 with a body echoing the filename suggests the server accepted it."
+        },
+        {
+            "id": "PCAP_BEACONING",
+            "kind": "structural",
+            "title": "Regular beaconing",
+            "category": "metadata",
+            "points": 10,
+            "severity": "low",
+            "applies_to": ["pcap"],
+            "rationale": "Five or more equally sized requests on a regular timer look like an implant checking in."
         },
         {
             "id": "SIG_PHP_TAG",
