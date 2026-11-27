@@ -910,3 +910,22 @@ What was tested (fresh SHELLSUITE_HOME, Python 3.13.5):
 Notes:
 - No tests added (manual testing by the student).
 - Open questions in the PR: `--json` shape for `analyze --score`, whether `raw_points` should include corroboration (the brief was ambiguous, documented in §5), and whether the `list` tables should show `sha256`.
+
+[2026-11-27 17:01] Task: PR #3 review follow-up — top 5 findings, score banner, separate score directory.
+
+What was done:
+- `show`: new `--all`. By default the block lists the five rules that add the most points (ties by `rule_id`, then offset), then `… N more finding(s), use --all to list them`; the header says `top 5 by weight` only when something is hidden.
+- `score` / `analyze --score`: the banner (`SCORE  87/100 (87 %)` between two rules) is now the last thing printed, after contributions, categories and ruleset; the score-file path is the first line. `analyze --score` no longer repeats the "run block score" hint it just satisfied.
+- `shellsuite/config.py`: `score_dir()` next to `analysis_dir()`; `store.score_path()`, `store.score_files()` and `write_score()` now use it, so results live in `~/.shellsuite/analysis/` and scores in `~/.shellsuite/score/`.
+- `list scores` empty message points at the score directory, not the analysis directory.
+- `AGENTS.md` §3 (both helpers), §5 (score path), §9 (`show --all`, default top 5).
+
+What was tested (fresh SHELLSUITE_HOME, Python 3.13.5):
+- `analyze --score` on the ShellShock shell -> `~/.shellsuite/score/_part0_PostEncShell.php_score.json`, `analysis/` holding only the result; banner last.
+- `show` on `PostEncShell_Capture.pcap` (108 findings) -> 5 rows + `… 103 more finding(s), use --all to list them`; `--all` -> 125 lines.
+- `show` on `disguised.jpg` (4 findings) -> no `top 5` suffix, nothing hidden.
+- `list scores` / `--filter 'score > 60'` / `--order raw_points --asc --json` over the new directory; empty home -> `no scores in ~/.shellsuite/score`.
+- `block rules --validate` OK; 154 tests, same pre-existing 4 failures + 5 errors (shellshock crypto/gui/manager_client).
+
+Notes:
+- Judgement calls 2 and 3 from the review were confirmed as implemented; open questions 1, 3, 4 and 5 were declined, 2 stays as is (the contract forbids `score` opening the original file).

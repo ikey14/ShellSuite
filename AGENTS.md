@@ -62,11 +62,21 @@ Add to `shellsuite/config.py`, next to the existing helpers:
 
 ```python
 def analysis_dir() -> Path:
-    """Directory holding per-file analysis results and scores."""
+    """Directory holding per-file analysis results."""
     directory = data_dir() / "analysis"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
+
+def score_dir() -> Path:
+    """Directory holding per-file scores, next to the results."""
+    directory = data_dir() / "score"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
 ```
+
+Results and scores live in two sibling directories (`~/.shellsuite/analysis/`,
+`~/.shellsuite/score/`) so either can be searched by hand without wading through
+the other.
 
 ## 4. Contract A — the result file
 
@@ -132,7 +142,7 @@ Invariants (tests assert them):
 
 ## 5. Contract B — the score file
 
-`~/.shellsuite/analysis/<basename>_score.json`, written from the result file only:
+`~/.shellsuite/score/<basename>_score.json`, written from the result file only:
 
 ```json
 {
@@ -502,7 +512,7 @@ shellsuite block score   --file <name> [--json]
 shellsuite block analyze --file <path> --score        # chain, for the demo
 shellsuite block list results [--order <field>] [--asc|--desc] [--filter 'attr op value'] [--json]
 shellsuite block list scores  [--order score] [--asc|--desc] [--filter 'score > 70'] [--json]
-shellsuite block show --file <name> [--json]
+shellsuite block show --file <name> [--all] [--json]
 shellsuite block rules [--json] [--validate]
 ```
 
@@ -518,7 +528,9 @@ shellsuite block rules [--json] [--validate]
   `analyzed_at` compares by date. A result without a score file is absent from
   `list scores`.
 - `show` renders result + score as a fixed-width block: target, stages, findings
-  with `@offset`, score with contributions and breakdown.
+  with `@offset`, score with contributions and breakdown. Only the five rules that
+  add the most points are listed by default, with the number of hidden findings
+  printed below them; `--all` lists every finding.
 - `--json` on every query action; never `print()` in a `--json` path.
 - Exit codes: `0` ok · `1` target/stage error · `2` bad arguments. `analyze` exits
   `0` even when the file is malicious — a detector is not a gate.
