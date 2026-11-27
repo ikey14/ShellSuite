@@ -55,7 +55,13 @@ def sessions_dir() -> Path:
     return directory
 
 def analysis_dir() -> Path:
-    """Directory holding per-file analysis results and scores."""
+    """Directory holding per-file analysis results."""
     directory = data_dir() / "analysis"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+def score_dir() -> Path:
+    """Directory holding per-file scores, next to the results."""
+    directory = data_dir() / "score"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
