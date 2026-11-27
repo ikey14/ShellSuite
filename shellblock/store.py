@@ -23,7 +23,7 @@ def result_path(target_name: str) -> Path:
 
 def score_path(target_name: str) -> Path:
     """Computes path of the score file written from that result"""
-    return config.analysis_dir() / f"{_basename(target_name)}{SCORE_SUFFIX}"
+    return config.score_dir() / f"{_basename(target_name)}{SCORE_SUFFIX}"
 
 
 def write_result(result: Result) -> Path:
@@ -62,8 +62,8 @@ def result_files() -> list[Path]:
 
 
 def score_files() -> list[Path]:
-    """Todos los score files del directorio de análisis, ordenados por nombre."""
-    return sorted(config.analysis_dir().glob(f"*{SCORE_SUFFIX}"))
+    """Todos los score files del directorio de scores, ordenados por nombre."""
+    return sorted(config.score_dir().glob(f"*{SCORE_SUFFIX}"))
 
 
 def name_from_path(path: Path, suffix: str) -> str:

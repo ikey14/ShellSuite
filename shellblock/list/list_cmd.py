@@ -139,7 +139,10 @@ def Run(args: argparse.Namespace) -> int:
         )
         return 0
     if not records:
-        print(f"no {args.listing} in {config.analysis_dir()}")
+        directory = (
+            config.score_dir() if args.listing == "scores" else config.analysis_dir()
+        )
+        print(f"no {args.listing} in {directory}")
         return 0
     print(render(records, columns))
     return 0
