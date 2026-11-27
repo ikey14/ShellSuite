@@ -61,13 +61,11 @@ def _CmdScore(args: argparse.Namespace) -> int:
         print(json.dumps(score, indent=2, ensure_ascii=False))
         return 0
 
-    print(f"score: {score['score']}/100 ({score['score']} %)")
-    for item in score["contributions"]:
-        print(f"  {item['rule_id']:<32} {item['points']:>3} ×{item['count']}  {item['title']}")
-    print(
-        f"ruleset {score['ruleset']} · "
-        f"{store.score_path(str(result['target']['name']))}"
-    )
+    score_path = store.score_path(str(result["target"]["name"]))
+    print(f"score file {score_path}")
+    print("")
+    for line in show_cmd.render_score(score):
+        print(line)
     return 0
 
 
@@ -103,14 +101,14 @@ def _CmdAnalyze(args: argparse.Namespace) -> int:
         print(result.to_json())
         return 0
     
-    _PrintSummary(result, saved)
+    _PrintSummary(result, saved, scored=score is not None)
     if score is not None:
         for line in show_cmd.render_score(score):
             print(line)
     return 0
 
 
-def _PrintSummary(result: Result, saved: Path) -> None:
+def _PrintSummary(result: Result, saved: Path, scored: bool = False) -> None:
     target = result.target
     suffix = " (truncated)" if target["truncated"] else ""
 
@@ -133,11 +131,14 @@ def _PrintSummary(result: Result, saved: Path) -> None:
     for note in result.notes:
         print(f"note: {note}", file=sys.stderr)
 
-    raw_points = scoring.compute(result.to_dict())["raw_points"]
-    print(
-        f"  {len(result.findings)} findings, {raw_points} raw points "
-        f"→ run 'shellsuite block score --file {target['name']}'"
-    )
+    if scored:
+        print(f"  {len(result.findings)} findings")
+    else:
+        raw_points = scoring.compute(result.to_dict())["raw_points"]
+        print(
+            f"  {len(result.findings)} findings, {raw_points} raw points "
+            f"→ run 'shellsuite block score --file {target['name']}'"
+        )
     print(f"result: {saved}")
 
 
