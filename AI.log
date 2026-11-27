@@ -929,3 +929,21 @@ What was tested (fresh SHELLSUITE_HOME, Python 3.13.5):
 
 Notes:
 - Judgement calls 2 and 3 from the review were confirmed as implemented; open questions 1, 3, 4 and 5 were declined, 2 stays as is (the contract forbids `score` opening the original file).
+
+[2026-11-27 17:48] Task: update README.md for the finished ShellSuite (ShellShock + ShellBlock).
+
+What was done:
+- Rewrote the introduction, requirements, installation (including Wireshark/tshark/capinfos on PATH), state directory (analysis/ and score/), usage/modules and exit codes.
+- Added the full ShellBlock section: file analysis and examples, capture analysis (host filter, dump-json, keep-objects, max-size, pcap save steps from Wireshark/tcpdump, TLS/HTTP limitations), result layout, scoring formula and example output, list results/scores with fields and filters, show with --all/--json, rules list/validate and the 40-rule inventory, and ShellBlock limitations.
+- Kept and lightly updated the ShellShock creator/uploader/manager/GUI/filters docs; added ShellBlock examples to the useful-examples section and a development-checks note.
+- `pyproject.toml`: readme now points at README.md (README_EN.md did not exist) and the description names ShellBlock.
+
+What was tested:
+- `shellsuite --version` -> `shellsuite 0.1.0`.
+- `shellsuite block analyze --help`, `block list --help`, `block score --help`, `block show --help` cross-checked against the documented flags.
+- `shellsuite block rules` lists 40 rules (29 structural, 11 signature); `block rules --validate` was already green.
+- README fence count is even (710) and no stale "placeholder"/"README_EN" text remains.
+- `pip install -e .` succeeds with the new readme path.
+
+Notes:
+- No code changed; nothing committed.

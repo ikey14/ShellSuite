@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "shellsuite"
 version = "0.1.0"
-description = "ShellSuite: webshell generation and management (ShellShock) - academic project."
-readme = "README_EN.md"
+description = "ShellSuite: webshell generation, management and detection (ShellShock + ShellBlock) - academic project."
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["tree-sitter>=0.23", "tree-sitter-php>=0.23", "pyshark>=0.6"]
 
